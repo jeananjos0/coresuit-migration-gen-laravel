@@ -1,0 +1,15 @@
+<?php
+
+namespace {{repo_namespace}};
+
+use {{model_full}};
+use {{contracts_namespace}}\I{{Class}}Repository;
+use {{base_repo_full}} as {{base_repo}};
+
+class {{Class}}Repository extends {{base_repo}} implements I{{Class}}Repository
+{
+    public function __construct({{model_class}} $model)
+    {
+        parent::__construct($model);
+    }
+}

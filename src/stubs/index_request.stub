@@ -1,0 +1,8 @@
+<?php
+
+namespace App\Http\Requests\Shared;
+
+class IndexRequest extends BaseIndexRequest
+{
+    // sem filtros extras
+}

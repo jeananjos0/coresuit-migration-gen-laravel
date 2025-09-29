@@ -1,0 +1,187 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Shared;
+
+use App\DTOs\Shared\IndexQueryDTO;
+use App\Repositories\Contracts\IBaseRepository;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Log;
+
+class BaseService implements IBaseService
+{
+    public function __construct(protected IBaseRepository $repo) {}
+
+    public function getAll(IndexQueryDTO $dto): LengthAwarePaginator
+    {
+        try {
+            $this->beforeGetAll($dto);
+            $result = $this->repo->getAll($dto);
+            $this->afterGetAll($dto, $result);
+            return $result;
+        } catch (\Throwable $e) {
+            Log::error('BaseCrudService::getAll', ['ex' => $e]);
+            return new LengthAwarePaginator([], 0, $dto->perPage, $dto->page);
+        }
+    }
+
+    public function getById(int|string $id, array $with = []): ?Model
+    {
+        try {
+            $this->beforeGetById($id, $with);
+            $model = $this->repo->findById($id, $with);
+            if ($model) $this->afterGetById($model);
+            return $model;
+        } catch (\Throwable $e) {
+            Log::warning('BaseCrudService::getById', ['id' => $id, 'ex' => $e]);
+            return null;
+        }
+    }
+
+    public function create(array $data): Model
+    {
+        $this->beforeCreate($data);
+        $model = $this->repo->create($data);
+        $this->afterCreate($model);
+        return $model;
+    }
+
+    public function update(int|string $id, array $data): Model
+    {
+        $this->beforeUpdate($id, $data);
+        $model = $this->repo->update($id, $data);
+        $this->afterUpdate($model);
+        return $model;
+    }
+
+    public function delete(int|string $id): bool
+    {
+        try {
+            $this->beforeDelete($id);
+            $ok = $this->repo->delete($id);
+            $this->afterDelete($id, $ok);
+            return $ok;
+        } catch (\Throwable $e) {
+            Log::warning('BaseCrudService::delete', ['id' => $id, 'ex' => $e]);
+            return false;
+        }
+    }
+
+    public function restore(int|string $id): bool
+    {
+        try {
+            $this->beforeRestore($id);
+            $ok = $this->repo->restore($id);
+            $this->afterRestore($id, $ok);
+            return $ok;
+        } catch (\Throwable $e) {
+            Log::warning('BaseCrudService::restore', ['id' => $id, 'ex' => $e]);
+            return false;
+        }
+    }
+
+    public function forceDelete(int|string $id): bool
+    {
+        try {
+            $this->beforeForceDelete($id);
+            $ok = $this->repo->forceDelete($id);
+            $this->afterForceDelete($id, $ok);
+            return $ok;
+        } catch (\Throwable $e) {
+            Log::warning('BaseCrudService::forceDelete', ['id' => $id, 'ex' => $e]);
+            return false;
+        }
+    }
+
+    public function deactivate(int|string $id): bool
+    {
+        return $this->delete($id);
+    }
+
+    public function activate(int|string $id): bool
+    {
+        return $this->restore($id);
+    }
+
+    public function bulkDelete(array $ids): int
+    {
+        try {
+            $this->beforeBulkDelete($ids);
+            $n = $this->repo->bulkDelete($ids);
+            $this->afterBulkDelete($ids, $n);
+            return $n;
+        } catch (\Throwable $e) {
+            Log::warning('BaseCrudService::bulkDelete', ['ids' => $ids, 'ex' => $e]);
+            return 0;
+        }
+    }
+
+    public function bulkForceDelete(array $ids): int
+    {
+        try {
+            $this->beforeBulkForceDelete($ids);
+            $n = $this->repo->bulkForceDelete($ids);
+            $this->afterBulkForceDelete($ids, $n);
+            return $n;
+        } catch (\Throwable $e) {
+            Log::warning('BaseCrudService::bulkForceDelete', ['ids' => $ids, 'ex' => $e]);
+            return 0;
+        }
+    }
+
+    public function bulkRestore(array $ids): int
+    {
+        try {
+            $this->beforeBulkRestore($ids);
+            $n = $this->repo->bulkRestore($ids);
+            $this->afterBulkRestore($ids, $n);
+            return $n;
+        } catch (\Throwable $e) {
+            Log::warning('BaseCrudService::bulkRestore', ['ids' => $ids, 'ex' => $e]);
+            return 0;
+        }
+    }
+
+    public function exists(array $where): bool
+    {
+        try {
+            return $this->repo->exists($where);
+        } catch (\Throwable $e) {
+            Log::warning('BaseCrudService::exists', ['where' => $where, 'ex' => $e]);
+            return false;
+        }
+    }
+
+    public function count(array $where = []): int
+    {
+        try {
+            return $this->repo->count($where);
+        } catch (\Throwable $e) {
+            Log::warning('BaseCrudService::count', ['where' => $where, 'ex' => $e]);
+            return 0;
+        }
+    }
+
+    protected function beforeGetAll(IndexQueryDTO $dto): void {}
+    protected function afterGetAll(IndexQueryDTO $dto, LengthAwarePaginator $paginator): void {}
+    protected function beforeGetById(int|string $id, array $with): void {}
+    protected function afterGetById(Model $model): void {}
+    protected function beforeCreate(array &$data): void {}
+    protected function afterCreate(Model $model): void {}
+    protected function beforeUpdate(int|string $id, array &$data): void {}
+    protected function afterUpdate(Model $model): void {}
+    protected function beforeDelete(int|string $id): void {}
+    protected function afterDelete(int|string $id, bool $ok): void {}
+    protected function beforeRestore(int|string $id): void {}
+    protected function afterRestore(int|string $id, bool $ok): void {}
+    protected function beforeForceDelete(int|string $id): void {}
+    protected function afterForceDelete(int|string $id, bool $ok): void {}
+    protected function beforeBulkDelete(array $ids): void {}
+    protected function afterBulkDelete(array $ids, int $deleted): void {}
+    protected function beforeBulkForceDelete(array $ids): void {}
+    protected function afterBulkForceDelete(array $ids, int $deleted): void {}
+    protected function beforeBulkRestore(array $ids): void {}
+    protected function afterBulkRestore(array $ids, int $restored): void {}
+}

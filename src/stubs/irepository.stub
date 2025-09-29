@@ -1,0 +1,7 @@
+<?php
+
+namespace {{contracts_namespace}};
+
+use {{base_irepo_full}} as {{base_interface}};
+
+interface I{{Class}}Repository extends {{base_interface}} {}

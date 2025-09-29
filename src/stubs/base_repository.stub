@@ -1,0 +1,282 @@
+<?php
+
+namespace App\Repositories\Shared;
+
+use App\Repositories\Contracts\IBaseRepository;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use App\DTOs\Shared\IndexQueryDTO;
+
+abstract class BaseRepository implements IBaseRepository
+{
+    public function __construct(protected Model $model) {}
+
+    public function query(): Builder
+    {
+        /** @var Builder $q */
+        $q = $this->model->newQuery();
+        return $q;
+    }
+
+    public function with(array $relations): Builder
+    {
+        $q = $this->query();
+
+        if (!empty($relations)) {
+            $allowed = property_exists($this->model, 'allowedRelations')
+                ? (array) $this->model->allowedRelations
+                : $relations;
+
+            $rels = array_values(array_intersect($relations, $allowed));
+            if ($rels) {
+                $q->with($rels);
+            }
+        }
+        return $q;
+    }
+
+    public function getAll(IndexQueryDTO $dto): LengthAwarePaginator
+    {
+        $q = $this->query();
+
+        if (!empty($dto->with)) {
+            $allowed = property_exists($this->model, 'allowedRelations')
+                ? (array) $this->model->allowedRelations
+                : $dto->with;
+
+            $rels = array_values(array_intersect($dto->with, $allowed));
+            if ($rels) {
+                $q->with($rels);
+            }
+        }
+
+        if (!empty($dto->filters)) {
+            $q = $this->applyFilters($q, $dto->filters);
+        }
+
+        if (!empty($dto->sortBy)) {
+            $allowedSorts = property_exists($this->model, 'allowedSorts')
+                ? (array) $this->model->allowedSorts
+                : [];
+
+            if (empty($allowedSorts) || in_array($dto->sortBy, $allowedSorts, true)) {
+                $q->orderBy($dto->sortBy, $dto->sortDir);
+            }
+        }
+
+        $paginator = $q->paginate($dto->perPage, ['*'], 'page', $dto->page);
+        return $paginator->appends($this->buildAppendsFromDto($dto));
+    }
+
+    protected function buildAppendsFromDto(IndexQueryDTO $dto): array
+    {
+        return [
+            'perPage' => $dto->perPage,
+            'page'    => $dto->page,
+            'sortBy'  => $dto->sortBy,
+            'sortDir' => $dto->sortDir,
+            'with'    => $dto->with,
+            'filters' => $dto->filters,
+        ];
+    }
+
+    public function findById(int|string $id, array $with = []): ?Model
+    {
+        $q = $this->with($with);
+        return $q->find($id);
+    }
+
+    public function firstOrFailById(int|string $id, array $with = []): Model
+    {
+        $q = $this->with($with);
+        return $q->findOrFail($id);
+    }
+
+    public function findManyByIds(array $ids, array $with = []): Collection
+    {
+        $q = $this->with($with);
+        return $q->whereIn($this->model->getKeyName(), $ids)->get();
+    }
+
+    public function exists(array $where): bool
+    {
+        $q = $this->query();
+        foreach ($where as $col => $val) {
+            $q->where($col, $val);
+        }
+        return $q->exists();
+    }
+
+    public function count(array $where = []): int
+    {
+        $q = $this->query();
+        foreach ($where as $col => $val) {
+            $q->where($col, $val);
+        }
+        return (int) $q->count();
+    }
+
+    public function create(array $data): Model
+    {
+        $this->stampUserId($data);
+
+        return DB::transaction(function () use ($data) {
+            $model = $this->model->newInstance();
+            $model->fill($data);
+            $model->save();
+            return $model->fresh();
+        });
+    }
+
+    public function update(int|string $id, array $data): Model
+    {
+        $this->stampUserId($data);
+
+        return DB::transaction(function () use ($id, $data) {
+            /** @var Model $model */
+            $model = $this->query()->lockForUpdate()->findOrFail($id);
+            $model->fill($data);
+            $model->save();
+            return $model->fresh();
+        });
+    }
+
+    public function upsert(array $rows, array $uniqueBy, array $updateColumns = []): void
+    {
+        DB::table($this->model->getTable())->upsert($rows, $uniqueBy, $updateColumns);
+    }
+
+    public function delete(int|string $id): bool
+    {
+        $model = $this->query()->findOrFail($id);
+        return (bool) $model->delete();
+    }
+
+    public function forceDelete(int|string $id): bool
+    {
+        $model = $this->withTrashedIfSupported()->findOrFail($id);
+        if ($this->modelUsesSoftDeletes()) {
+            return (bool) $model->forceDelete();
+        }
+        return (bool) $model->delete();
+    }
+
+    public function restore(int|string $id): bool
+    {
+        $model = $this->withTrashedIfSupported()->findOrFail($id);
+        if ($this->modelUsesSoftDeletes()) {
+            return (bool) $model->restore();
+        }
+        return false;
+    }
+
+    public function bulkDelete(array $ids): int
+    {
+        return $this->query()
+            ->whereIn($this->model->getKeyName(), $ids)
+            ->delete();
+    }
+
+    public function bulkForceDelete(array $ids): int
+    {
+        $q = $this->withTrashedIfSupported()
+            ->whereIn($this->model->getKeyName(), $ids);
+
+        if ($this->modelUsesSoftDeletes()) {
+            return $q->forceDelete();
+        }
+        return $q->delete();
+    }
+
+    public function bulkRestore(array $ids): int
+    {
+        if (!$this->modelUsesSoftDeletes()) {
+            return 0;
+        }
+
+        return $this->withTrashedIfSupported()
+            ->whereIn($this->model->getKeyName(), $ids)
+            ->restore();
+    }
+
+    protected function withTrashedIfSupported(): Builder
+    {
+        $q = $this->query();
+        if ($this->modelUsesSoftDeletes()) {
+            $q->withTrashed();
+        }
+        return $q;
+    }
+
+    protected function modelUsesSoftDeletes(): bool
+    {
+        return in_array(SoftDeletes::class, class_uses_recursive($this->model), true);
+    }
+
+    public function applyFilters(Builder $q, array $filters): Builder
+    {
+        if (property_exists($this->model, 'filterMap') && is_array($this->model->filterMap)) {
+            foreach ($this->model->filterMap as $key => $callback) {
+                if (array_key_exists($key, $filters) && is_callable($callback)) {
+                    $q = $callback($q, $filters[$key]);
+                    unset($filters[$key]);
+                }
+            }
+        }
+
+        foreach ($filters as $key => $value) {
+            if ($value === null || $value === '') continue;
+
+            if (is_array($value) && array_key_exists('like', $value)) {
+                $q->where($key, 'like', '%' . $value['like'] . '%');
+                continue;
+            }
+
+            if (is_array($value) && array_key_exists('in', $value)) {
+                $q->whereIn($key, (array) $value['in']);
+                continue;
+            }
+
+            if (is_array($value) && array_key_exists('between', $value)) {
+                [$from, $to] = Arr::wrap($value['between']) + [null, null];
+                if ($from && $to) $q->whereBetween($key, [$from, $to]);
+                continue;
+            }
+
+            if (is_bool($value)) {
+                $q->where($key, $value);
+                continue;
+            }
+
+            $q->where($key, $value);
+        }
+
+        return $q;
+    }
+
+    protected function stampUserId(array &$data, ?string $guard = null): void
+    {
+        if (!array_key_exists('user_id', $data) && $this->hasUserIdColumn()) {
+            $userId = $guard
+                ? (Auth::guard($guard)->id())
+                : Auth::id();
+
+            if ($userId) {
+                $data['user_id'] = $userId;
+            }
+        }
+    }
+
+    protected function hasUserIdColumn(): bool
+    {
+        $table = $this->model->getTable();
+        return Schema::hasColumn($table, 'user_id');
+    }
+}

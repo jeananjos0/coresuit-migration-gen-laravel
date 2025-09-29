@@ -1,0 +1,40 @@
+<?php
+
+namespace App\Http\Requests\Shared;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+abstract class BaseIndexRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return array_merge([
+            'perPage' => ['sometimes', 'integer', 'min:1', 'max:200'],
+            'page'    => ['sometimes', 'integer', 'min:1'],
+            'sortBy'  => ['sometimes', 'string', 'max:50'],
+            'sortDir' => ['sometimes', 'in:asc,desc'],
+            'with'    => ['sometimes'],
+            'filters' => ['sometimes', 'array'],
+        ], $this->filtersRules());
+    }
+
+    protected function filtersRules(): array
+    {
+        return [];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $with = $this->input('with');
+        if (is_string($with)) {
+            $this->merge([
+                'with' => array_values(array_filter(array_map('trim', explode(',', $with)))),
+            ]);
+        }
+    }
+}

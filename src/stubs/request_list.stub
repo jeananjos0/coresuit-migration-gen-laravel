@@ -1,0 +1,41 @@
+<?php
+
+namespace {{request_namespace}};
+
+use {{base_index_request_fqcn}} as BaseIndexRequest;
+
+class {{Class}}ListRequest extends BaseIndexRequest
+{
+    protected function filtersRules(): array
+    {
+        return [
+{{filter_rules}}
+        ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        parent::prepareForValidation();
+
+        $filters = (array) $this->input('filters', []);
+
+        // Converter strings diretas em LIKE para campos textuais
+        $stringFields = [
+{{string_filter_fields}}
+        ];
+        foreach ($stringFields as $sf) {
+            if (isset($filters[$sf]) && is_string($filters[$sf])) {
+                $filters[$sf] = ['like' => trim((string) $filters[$sf])];
+            }
+        }
+
+        // Trim em strings aninhadas de like
+        foreach ($stringFields as $sf) {
+            if (isset($filters[$sf]['like']) && is_string($filters[$sf]['like'])) {
+                $filters[$sf]['like'] = trim((string) $filters[$sf]['like']);
+            }
+        }
+
+        $this->merge(['filters' => $filters]);
+    }
+}

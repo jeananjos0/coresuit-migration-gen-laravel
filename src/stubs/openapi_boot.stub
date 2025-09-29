@@ -1,0 +1,84 @@
+<?php
+
+namespace App\OpenApi;
+
+use OpenApi\Annotations as OA;
+
+/**
+ * @OA\OpenApi(
+ *   @OA\Info(
+ *     title="Sua API",
+ *     version="1.0.0"
+ *   ),
+ *   security={{"bearerAuth": {}}, {"tenant": {}}}
+ * )
+ *
+ * @OA\Server(url="/api", description="API base")
+ *
+ * @OA\Tag(
+ *   name="Categorias",
+ *   description="Operações de categorias"
+ * )
+ *
+ * @OA\Components(
+ *   securitySchemes={
+ *     @OA\SecurityScheme(
+ *       securityScheme="bearerAuth",
+ *       type="http",
+ *       scheme="bearer",
+ *       bearerFormat="JWT"
+ *     ),
+ *     @OA\SecurityScheme(
+ *       securityScheme="tenant",
+ *       type="apiKey",
+ *       in="header",
+ *       name="X-Tenant"
+ *     )
+ *   },
+ *   parameters={
+ *     @OA\Parameter(
+ *       parameter="PerPage",
+ *       name="perPage",
+ *       in="query",
+ *       description="Itens por página (1..200)",
+ *       @OA\Schema(type="integer", minimum=1, maximum=200)
+ *     ),
+ *     @OA\Parameter(
+ *       parameter="Page",
+ *       name="page",
+ *       in="query",
+ *       description="Página (>=1)",
+ *       @OA\Schema(type="integer", minimum=1)
+ *     ),
+ *     @OA\Parameter(
+ *       parameter="SortBy",
+ *       name="sortBy",
+ *       in="query",
+ *       description="Campo para ordenar",
+ *       @OA\Schema(type="string")
+ *     ),
+ *     @OA\Parameter(
+ *       parameter="SortDir",
+ *       name="sortDir",
+ *       in="query",
+ *       description="Direção",
+ *       @OA\Schema(type="string", enum={"asc","desc"})
+ *     ),
+ *     @OA\Parameter(
+ *       parameter="With",
+ *       name="with",
+ *       in="query",
+ *       description="Relações (ex.: rel1,rel2)",
+ *       @OA\Schema(type="string")
+ *     ),
+ *     @OA\Parameter(
+ *       parameter="FilterNome",
+ *       name="filters[nome]",
+ *       in="query",
+ *       description="Filtro por nome",
+ *       @OA\Schema(type="string")
+ *     )
+ *   }
+ * )
+ */
+class OpenApi {}

@@ -1,0 +1,7 @@
+<?php
+
+namespace {{service_namespace}};
+
+use {{base_iservice_fqcn}} as IBaseService;
+
+interface I{{Class}}Service extends IBaseService {}

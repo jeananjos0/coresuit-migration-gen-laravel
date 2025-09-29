@@ -1,0 +1,36 @@
+<?php
+
+namespace App\DTOs\Shared;
+
+final class IndexQueryDTO
+{
+    public int $perPage = 15;
+    public int $page = 1;
+    public ?string $sortBy = null;
+    public string $sortDir = 'asc';
+    public array $with = [];
+    public array $filters = [];
+
+    public static function fromArray(array $data): self
+    {
+        $dto = new self();
+
+        $dto->perPage = (int)($data['perPage'] ?? $data['per_page'] ?? 15);
+        $dto->page    = (int)($data['page'] ?? 1);
+
+        $dto->sortBy  = $data['sortBy'] ?? null;
+
+        $sortDir      = $data['sortDir'] ?? 'asc';
+        $dto->sortDir = in_array($sortDir, ['asc', 'desc'], true) ? $sortDir : 'asc';
+
+        $with = $data['with'] ?? [];
+        if (is_string($with)) {
+            $with = array_values(array_filter(array_map('trim', explode(',', $with))));
+        }
+        $dto->with = array_values(array_unique((array)$with));
+
+        $dto->filters = is_array($data['filters'] ?? null) ? $data['filters'] : [];
+
+        return $dto;
+    }
+}

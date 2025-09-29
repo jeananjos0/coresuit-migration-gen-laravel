@@ -1,0 +1,14 @@
+<?php
+
+namespace {{service_namespace}};
+
+use {{repo_contract_fqcn}};
+use {{base_service_fqcn}} as BaseService;
+
+class {{Class}}Service extends BaseService implements I{{Class}}Service
+{
+    public function __construct({{repo_contract_short}} $repository)
+    {
+        parent::__construct($repository);
+    }
+}

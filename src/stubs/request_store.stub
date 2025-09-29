@@ -1,0 +1,32 @@
+<?php
+
+namespace {{request_namespace}};
+
+use {{base_form_request_fqcn}} as FormRequest;
+
+class {{Class}}StoreRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return auth('api')->check();
+    }
+
+    public function rules(): array
+    {
+        return [
+{{store_rules}}
+        ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+{{store_sanitizers}}
+    }
+
+    public function messages(): array
+    {
+        return [
+{{store_messages}}
+        ];
+    }
+}

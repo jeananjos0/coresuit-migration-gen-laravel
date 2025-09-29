@@ -1,0 +1,171 @@
+<?php
+
+namespace {{controller_namespace}};
+
+use {{base_controller_fqcn}} as BaseController;
+use {{index_request_fqcn}};
+use {{store_request_fqcn}};
+use {{update_request_fqcn}};
+use {{service_interface_fqcn}};
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+class {{Class}}Controller extends BaseController
+{
+    public function __construct({{service_interface_short}} $service)
+    {
+        parent::__construct($service);
+    }
+
+    protected function defaultWith(): array
+    {
+        return [{{with_relations}}];
+    }
+
+    protected function indexRequestClass(): string
+    {
+        return {{index_request_class}};
+    }
+
+    protected function storeRequestClass(): string
+    {
+        return {{store_request_class}};
+    }
+
+    protected function updateRequestClass(): string
+    {
+        return {{update_request_class}};
+    }
+
+    /**
+     * @OA\Get(
+     *   path="/{{route_prefix}}",
+     *   tags={"{{tag}}"},
+     *   summary="Lista {{tag_lower_plural}}",
+     *   description="Lista paginada com filtros dinâmicos e carregamento condicional de relações.",
+     *   security={{"bearerAuth":{}}},
+     *   parameters={
+     *     @OA\Parameter(name="page", in="query", @OA\Schema(type="integer", minimum=1), description="Página atual"),
+     *     @OA\Parameter(name="per_page", in="query", @OA\Schema(type="integer", minimum=1, maximum=200), description="Itens por página"),
+     *     @OA\Parameter(name="sort_by", in="query", @OA\Schema(type="string"), description="Campo para ordenação"),
+     *     @OA\Parameter(name="sort_dir", in="query", @OA\Schema(type="string", enum={"asc","desc"}), description="Direção da ordenação"),
+     *     @OA\Parameter(name="with", in="query", @OA\Schema(type="string"), description="Relações para carregar. Ex: {{with_relations_example}}"),
+{{filters_parameters}}
+     *   },
+     *   @OA\Response(response=200, description="OK")
+     * )
+     */
+    public function index(Request $request): JsonResponse
+    {
+        return parent::index($request);
+    }
+
+    /**
+     * @OA\Get(
+     *   path="/{{route_prefix}}/{id}",
+     *   tags={"{{tag}}"},
+     *   summary="Detalhe de {{tag_lower}}",
+     *   security={{"bearerAuth":{}}},
+     *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *   @OA\Response(response=200, description="OK"),
+     *   @OA\Response(response=404, description="Não encontrado")
+     * )
+     */
+    public function show(int $id): JsonResponse
+    {
+        return parent::show($id);
+    }
+
+    /**
+     * @OA\Post(
+     *   path="/{{route_prefix}}",
+     *   tags={"{{tag}}"},
+     *   summary="Cria {{tag_lower}}",
+     *   security={{"bearerAuth":{}}},
+     *   @OA\RequestBody(
+     *     required=true,
+     *     @OA\JsonContent(
+     *       required={{{store_required}}},
+{{store_body_properties}}
+     *     )
+     *   ),
+     *   @OA\Response(response=201, description="Criado"),
+     *   @OA\Response(response=422, description="Validação falhou")
+     * )
+     */
+    public function store(Request $request): JsonResponse
+    {
+        return parent::store($request);
+    }
+
+    /**
+     * @OA\Put(
+     *   path="/{{route_prefix}}/{id}",
+     *   tags={"{{tag}}"},
+     *   summary="Atualiza {{tag_lower}}",
+     *   security={{"bearerAuth":{}}},
+     *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *   @OA\RequestBody(
+     *     required=true,
+     *     @OA\JsonContent(
+{{update_body_properties}}
+     *     )
+     *   ),
+     *   @OA\Response(response=200, description="OK"),
+     *   @OA\Response(response=404, description="Não encontrado"),
+     *   @OA\Response(response=422, description="Validação falhou")
+     * )
+     */
+    public function update(Request $request, int $id): JsonResponse
+    {
+        return parent::update($request, $id);
+    }
+
+    /**
+     * @OA\Delete(
+     *   path="/{{route_prefix}}/{id}",
+     *   tags={"{{tag}}"},
+     *   summary="Soft delete de {{tag_lower}}",
+     *   security={{"bearerAuth":{}}},
+     *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *   @OA\Response(response=204, description="Sem conteúdo"),
+     *   @OA\Response(response=404, description="Não encontrado")
+     * )
+     */
+    public function destroy(int $id): JsonResponse
+    {
+        return parent::destroy($id);
+    }
+
+    /**
+     * @OA\Post(
+     *   path="/{{route_prefix}}/{id}/restore",
+     *   tags={"{{tag}}"},
+     *   summary="Restaura {{tag_lower}}",
+     *   security={{"bearerAuth":{}}},
+     *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *   @OA\Response(response=200, description="OK"),
+     *   @OA\Response(response=404, description="Não encontrado")
+     * )
+     */
+    public function restore(int $id): JsonResponse
+    {
+        return parent::restore($id);
+    }
+
+    /**
+     * @OA\Delete(
+     *   path="/{{route_prefix}}/{id}/force",
+     *   tags={"{{tag}}"},
+     *   summary="Exclusão permanente",
+     *   security={{"bearerAuth":{}}},
+     *   @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
+     *   @OA\Response(response=204, description="Sem conteúdo"),
+     *   @OA\Response(response=404, description="Não encontrado")
+     * )
+     */
+    public function forceDelete(int $id): JsonResponse
+    {
+        return parent::forceDelete($id);
+    }
+}

@@ -1,0 +1,38 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+/**
+{{phpdoc_props}}
+ */
+class {{Class}} extends Model
+{
+    use HasFactory, SoftDeletes;
+
+    protected $table = '{{table}}';
+    protected $primaryKey = '{{primaryKey}}';
+    public $incrementing = true;
+    protected $keyType = '{{keyType}}';
+
+    protected $fillable = [
+{{fillable}}
+    ];
+
+    protected $casts = [
+{{casts}}
+    ];
+
+    protected $hidden = [
+{{hidden}}
+    ];
+
+    protected $appends = [
+{{appends}}
+    ];
+
+{{relations}}
+}

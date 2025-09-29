@@ -1,0 +1,99 @@
+<?php
+
+namespace App\Http\Controllers\Shared;
+
+use App\Http\Controllers\Controller;
+use App\Services\Shared\IBaseService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+abstract class BaseController extends Controller
+{
+    public function __construct(protected IBaseService $service) {}
+
+    abstract protected function indexRequestClass(): string;
+    abstract protected function storeRequestClass(): string;
+    abstract protected function updateRequestClass(): string;
+
+    protected function defaultWith(): array
+    {
+        return [];
+    }
+
+    protected function transform(mixed $payload): mixed
+    {
+        return $payload;
+    }
+
+    public function index(Request $request): JsonResponse
+    {
+        $payload = $this->validateWithFormRequest($this->indexRequestClass(), $request);
+
+        $payload['with'] = array_values(array_unique(array_merge(
+            $this->defaultWith(),
+            (array)($payload['with'] ?? [])
+        )));
+
+        $dto = \App\DTOs\Shared\IndexQueryDTO::fromArray($payload);
+
+        $result = $this->service->getAll($dto);
+        return response()->json($this->transform($result), Response::HTTP_OK);
+    }
+
+    public function show(int $id): JsonResponse
+    {
+        $model = $this->service->getById($id, with: $this->defaultWith());
+        abort_if(!$model, Response::HTTP_NOT_FOUND, 'Registro não encontrado.');
+        return response()->json($this->transform($model), Response::HTTP_OK);
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        $data  = $this->validateWithFormRequest($this->storeRequestClass(), $request);
+        $model = $this->service->create($data);
+        return response()->json($this->transform($model), Response::HTTP_CREATED);
+    }
+
+    public function update(Request $request, int $id): JsonResponse
+    {
+        $data  = $this->validateWithFormRequest($this->updateRequestClass(), $request);
+        $model = $this->service->update($id, $data);
+        return response()->json($this->transform($model), Response::HTTP_OK);
+    }
+
+    public function destroy(int $id): JsonResponse
+    {
+        $ok = $this->service->deactivate($id);
+        abort_unless($ok, Response::HTTP_NOT_FOUND, 'Registro não encontrado.');
+        return response()->json(null, Response::HTTP_NO_CONTENT);
+    }
+
+    public function restore(int $id): JsonResponse
+    {
+        $ok = $this->service->activate($id);
+        abort_unless($ok, Response::HTTP_NOT_FOUND, 'Registro não encontrado.');
+        return response()->json(['restored' => true], Response::HTTP_OK);
+    }
+
+    public function forceDelete(int $id): JsonResponse
+    {
+        $ok = $this->service->forceDelete($id);
+        abort_unless($ok, Response::HTTP_NOT_FOUND, 'Registro não encontrado.');
+        return response()->json(null, Response::HTTP_NO_CONTENT);
+    }
+
+    protected function validateWithFormRequest(string $formRequestClass, Request $request): array
+    {
+        /** @var \Illuminate\Foundation\Http\FormRequest $form */
+        $form = $formRequestClass::createFromBase($request);
+
+        $form->setContainer(app())->setRedirector(app('redirect'));
+        $form->setRouteResolver(fn() => $request->route());
+        $form->setUserResolver($request->getUserResolver());
+
+        $form->validateResolved();
+
+        return $form->validated();
+    }
+}
