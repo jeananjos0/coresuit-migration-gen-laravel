@@ -30,11 +30,58 @@ abstract class BaseIndexRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        // 1) Normaliza "with" string -> array
         $with = $this->input('with');
         if (is_string($with)) {
             $this->merge([
                 'with' => array_values(array_filter(array_map('trim', explode(',', $with)))),
             ]);
         }
+
+        // 2) Limpa todo o payload: trim strings, '' -> null (recursivo)
+        $input = $this->all();
+
+        $clean = function ($value) use (&$clean) {
+            if (is_string($value)) {
+                $v = trim($value);
+                return $v === '' ? null : $v;
+            }
+            if (is_array($value)) {
+                $out = [];
+                foreach ($value as $k => $v) {
+                    $cv = $clean($v);
+                    $out[$k] = $cv;
+                }
+                return $out;
+            }
+            return $value;
+        };
+
+        $input = $clean($input);
+
+        // 3) Remove chaves vazias dentro de filters (null, [], '')
+        $pruneEmpty = function ($arr) use (&$pruneEmpty) {
+            if (!is_array($arr)) return $arr;
+            $out = [];
+            foreach ($arr as $k => $v) {
+                if (is_array($v)) {
+                    $pv = $pruneEmpty($v);
+                    if ($pv !== [] && $pv !== null) $out[$k] = $pv;
+                } else {
+                    if (!is_null($v)) $out[$k] = $v;
+                }
+            }
+            return $out;
+        };
+
+        if (isset($input['filters']) && is_array($input['filters'])) {
+            $input['filters'] = $pruneEmpty($input['filters']);
+            if ($input['filters'] === []) {
+                unset($input['filters']);
+            }
+        }
+
+        // 4) Reinsere o payload limpo
+        $this->replace($input);
     }
 }
