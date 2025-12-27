@@ -126,26 +126,70 @@ Impactos por tipo:
 
 ```
 app/
-  DTOs/Shared/IndexQueryDTO.php
+  DTOs/
+    Shared/
+      IndexQueryDTO.php
+      PageDTO.php
+    <Entity>/
+      <Entity>CreateDTO.php
+      <Entity>UpdateDTO.php
+      <Entity>ListItemDTO.php
+      <Entity>DetailDTO.php
+
   Http/
     Controllers/
-      Shared/BaseController.php
-      System/<Entity>Controller.php
+      Shared/
+        BaseController.php
+      System/
+        <Entity>Controller.php
+        HealthController.php
     Requests/
-      Shared/{BaseIndexRequest,IndexRequest}.php
-      <Entity>/{<Entity>ListRequest,<Entity>StoreRequest,<Entity>UpdateRequest}.php
-  Models/<Entity>.php
-  OpenApi/OpenApi.php
-  Providers/{RepositoryServiceProvider,ServicesServiceProvider}.php
-  Repositories/
-    Contracts/{IBaseRepository.php,I<Entity>Repository.php}
-    <Entity>/<Entity>Repository.php
-  Services/
-    Shared/{BaseService.php,IBaseService.php}
-    <Entity>/{I<Entity>Service.php,<Entity>Service.php}
+      Shared/
+        BaseIndexRequest.php
+        IndexRequest.php
+      <Entity>/
+        <Entity>ListRequest.php
+        <Entity>StoreRequest.php
+        <Entity>UpdateRequest.php
 
-routes/api.php     # contém // [router_marckenew_generates]
-bootstrap/cache/coresuit_init.flag
+  Mappers/
+    Contracts/
+      ICrudMapper.php
+    <Entity>Mapper.php
+
+  Models/
+    <Entity>.php
+
+  OpenApi/
+    OpenApi.php
+
+  Providers/
+    RepositoryServiceProvider.php
+    ServicesServiceProvider.php
+
+  Repositories/
+    Shared/
+      BaseRepository.php
+    Contracts/
+      IBaseRepository.php
+      I<Entity>Repository.php
+    <Entity>/
+      <Entity>Repository.php
+
+  Services/
+    Shared/
+      BaseService.php
+      IBaseService.php
+    <Entity>/
+      I<Entity>Service.php
+      <Entity>Service.php
+
+routes/
+  api.php          # contém [router_marckenew_generates]
+
+bootstrap/cache/
+  coresuit_init.flag
+
 ```
 
 ---
