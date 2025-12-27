@@ -2,6 +2,7 @@
 
 namespace App\Repositories\Shared;
 
+use App\DTOs\Shared\IndexQueryDTO;
 use App\Repositories\Contracts\IBaseRepository;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -12,11 +13,23 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use App\DTOs\Shared\IndexQueryDTO;
 
 abstract class BaseRepository implements IBaseRepository
 {
     public function __construct(protected Model $model) {}
+
+    /**
+     * Se true: quando vier filtro/sort/where inválido, lança exception.
+     * Se false: ignora silenciosamente.
+     */
+    protected bool $strictQuery = false;
+
+    /**
+     *  Configurável:
+     * Se true: aplica lockForUpdate() no update.
+     * Se false: update normal (melhor concorrência/performance).
+     */
+    protected bool $useLockForUpdateOnUpdate = false;
 
     public function query(): Builder
     {
@@ -30,15 +43,13 @@ abstract class BaseRepository implements IBaseRepository
         $q = $this->query();
 
         if (!empty($relations)) {
-            $allowed = property_exists($this->model, 'allowedRelations')
-                ? (array) $this->model->allowedRelations
-                : $relations;
-
+            $allowed = $this->allowedRelations($relations);
             $rels = array_values(array_intersect($relations, $allowed));
             if ($rels) {
                 $q->with($rels);
             }
         }
+
         return $q;
     }
 
@@ -46,38 +57,37 @@ abstract class BaseRepository implements IBaseRepository
     {
         $q = $this->query();
 
+        // WITH
         if (!empty($dto->with)) {
-            $allowed = property_exists($this->model, 'allowedRelations')
-                ? (array) $this->model->allowedRelations
-                : $dto->with;
-
+            $allowed = $this->allowedRelations($dto->with);
             $rels = array_values(array_intersect($dto->with, $allowed));
             if ($rels) {
                 $q->with($rels);
             }
         }
 
+        // FILTERS (valida colunas antes)
         if (!empty($dto->filters)) {
             $q = $this->applyFilters($q, $dto->filters);
         }
 
+        // SORT (valida coluna)
         if (!empty($dto->sortBy)) {
-            $allowedSorts = property_exists($this->model, 'allowedSorts')
-                ? (array) $this->model->allowedSorts
-                : [];
-
-            if (empty($allowedSorts) || in_array($dto->sortBy, $allowedSorts, true)) {
-                $q->orderBy($dto->sortBy, $dto->sortDir);
+            $sortBy = $this->resolveSortColumn($dto->sortBy);
+            if ($sortBy !== null) {
+                $q->orderBy($sortBy, $dto->sortDir);
             }
         }
 
         $paginator = $q->paginate($dto->perPage, ['*'], 'page', $dto->page);
+
         return $paginator->appends($this->buildAppendsFromDto($dto));
     }
 
     protected function buildAppendsFromDto(IndexQueryDTO $dto): array
     {
         return [
+            // Mantém seu padrão (framework-friendly)
             'perPage' => $dto->perPage,
             'page'    => $dto->page,
             'sortBy'  => $dto->sortBy,
@@ -105,21 +115,23 @@ abstract class BaseRepository implements IBaseRepository
         return $q->whereIn($this->model->getKeyName(), $ids)->get();
     }
 
+    /**
+     *  SAFE: valida colunas e operadores
+     */
     public function exists(array $where): bool
     {
         $q = $this->query();
-        foreach ($where as $col => $val) {
-            $q->where($col, $val);
-        }
+        $q = $this->applyWhereSafe($q, $where);
         return $q->exists();
     }
 
+    /**
+     *  SAFE: valida colunas e operadores
+     */
     public function count(array $where = []): int
     {
         $q = $this->query();
-        foreach ($where as $col => $val) {
-            $q->where($col, $val);
-        }
+        $q = $this->applyWhereSafe($q, $where);
         return (int) $q->count();
     }
 
@@ -131,6 +143,7 @@ abstract class BaseRepository implements IBaseRepository
             $model = $this->model->newInstance();
             $model->fill($data);
             $model->save();
+
             return $model->fresh();
         });
     }
@@ -140,10 +153,18 @@ abstract class BaseRepository implements IBaseRepository
         $this->stampUserId($data);
 
         return DB::transaction(function () use ($id, $data) {
+            $q = $this->query();
+
+            if ($this->useLockForUpdateOnUpdate) {
+                $q->lockForUpdate();
+            }
+
             /** @var Model $model */
-            $model = $this->query()->lockForUpdate()->findOrFail($id);
+            $model = $q->findOrFail($id);
+
             $model->fill($data);
             $model->save();
+
             return $model->fresh();
         });
     }
@@ -162,18 +183,22 @@ abstract class BaseRepository implements IBaseRepository
     public function forceDelete(int|string $id): bool
     {
         $model = $this->withTrashedIfSupported()->findOrFail($id);
+
         if ($this->modelUsesSoftDeletes()) {
             return (bool) $model->forceDelete();
         }
+
         return (bool) $model->delete();
     }
 
     public function restore(int|string $id): bool
     {
         $model = $this->withTrashedIfSupported()->findOrFail($id);
+
         if ($this->modelUsesSoftDeletes()) {
             return (bool) $model->restore();
         }
+
         return false;
     }
 
@@ -192,6 +217,7 @@ abstract class BaseRepository implements IBaseRepository
         if ($this->modelUsesSoftDeletes()) {
             return $q->forceDelete();
         }
+
         return $q->delete();
     }
 
@@ -209,9 +235,11 @@ abstract class BaseRepository implements IBaseRepository
     protected function withTrashedIfSupported(): Builder
     {
         $q = $this->query();
+
         if ($this->modelUsesSoftDeletes()) {
             $q->withTrashed();
         }
+
         return $q;
     }
 
@@ -220,8 +248,12 @@ abstract class BaseRepository implements IBaseRepository
         return in_array(SoftDeletes::class, class_uses_recursive($this->model), true);
     }
 
+    /**
+     *  Ajustado: só aplica filtros permitidos (coluna existe / allowedFilters / filterMap).
+     */
     public function applyFilters(Builder $q, array $filters): Builder
     {
+        // 1) filterMap tem prioridade (campo virtual / lógica custom)
         if (property_exists($this->model, 'filterMap') && is_array($this->model->filterMap)) {
             foreach ($this->model->filterMap as $key => $callback) {
                 if (array_key_exists($key, $filters) && is_callable($callback)) {
@@ -231,31 +263,47 @@ abstract class BaseRepository implements IBaseRepository
             }
         }
 
+        // 2) valida as colunas reais
         foreach ($filters as $key => $value) {
-            if ($value === null || $value === '') continue;
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            $col = $this->resolveFilterColumn((string) $key);
+            if ($col === null) {
+                continue; // strictQuery pode lançar
+            }
 
             if (is_array($value) && array_key_exists('like', $value)) {
-                $q->where($key, 'like', '%' . $value['like'] . '%');
+                $like = (string) $value['like'];
+                if ($like !== '') {
+                    $q->where($col, 'like', '%' . $like . '%');
+                }
                 continue;
             }
 
             if (is_array($value) && array_key_exists('in', $value)) {
-                $q->whereIn($key, (array) $value['in']);
+                $in = array_values(array_filter((array) $value['in'], fn($v) => $v !== null && $v !== ''));
+                if (!empty($in)) {
+                    $q->whereIn($col, $in);
+                }
                 continue;
             }
 
             if (is_array($value) && array_key_exists('between', $value)) {
                 [$from, $to] = Arr::wrap($value['between']) + [null, null];
-                if ($from && $to) $q->whereBetween($key, [$from, $to]);
+                if ($from !== null && $to !== null) {
+                    $q->whereBetween($col, [$from, $to]);
+                }
                 continue;
             }
 
             if (is_bool($value)) {
-                $q->where($key, $value);
+                $q->where($col, $value);
                 continue;
             }
 
-            $q->where($key, $value);
+            $q->where($col, $value);
         }
 
         return $q;
@@ -264,9 +312,7 @@ abstract class BaseRepository implements IBaseRepository
     protected function stampUserId(array &$data, ?string $guard = null): void
     {
         if (!array_key_exists('user_id', $data) && $this->hasUserIdColumn()) {
-            $userId = $guard
-                ? (Auth::guard($guard)->id())
-                : Auth::id();
+            $userId = $guard ? Auth::guard($guard)->id() : Auth::id();
 
             if ($userId) {
                 $data['user_id'] = $userId;
@@ -278,5 +324,142 @@ abstract class BaseRepository implements IBaseRepository
     {
         $table = $this->model->getTable();
         return Schema::hasColumn($table, 'user_id');
+    }
+
+    /**
+     * ============================
+     *  SAFE WHERE (exists/count)
+     * ============================
+     */
+    protected function applyWhereSafe(Builder $q, array $where): Builder
+    {
+        foreach ($where as $key => $value) {
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            $col = $this->resolveFilterColumn((string) $key);
+            if ($col === null) {
+                continue; // strictQuery pode lançar
+            }
+
+            if (!is_array($value)) {
+                $q->where($col, $value);
+                continue;
+            }
+
+            $op = strtolower((string) ($value['op'] ?? '='));
+            $allowedOps = ['=', '!=', '<>', '>', '>=', '<', '<=', 'like', 'in', 'between', 'null', 'notnull'];
+
+            if (!in_array($op, $allowedOps, true)) {
+                $this->invalidQueryKey('where.op', (string) $op);
+                continue;
+            }
+
+            if ($op === 'null') {
+                $q->whereNull($col);
+                continue;
+            }
+
+            if ($op === 'notnull') {
+                $q->whereNotNull($col);
+                continue;
+            }
+
+            if ($op === 'like') {
+                $v = $value['value'] ?? null;
+                if ($v !== null && $v !== '') {
+                    $q->where($col, 'like', '%' . (string) $v . '%');
+                }
+                continue;
+            }
+
+            if ($op === 'in') {
+                $vals = array_values(array_filter((array) ($value['value'] ?? []), fn($v) => $v !== null && $v !== ''));
+                if (!empty($vals)) {
+                    $q->whereIn($col, $vals);
+                }
+                continue;
+            }
+
+            if ($op === 'between') {
+                [$from, $to] = Arr::wrap($value['value'] ?? null) + [null, null];
+                if ($from !== null && $to !== null) {
+                    $q->whereBetween($col, [$from, $to]);
+                }
+                continue;
+            }
+
+            $val = $value['value'] ?? null;
+            if ($val === null) {
+                continue;
+            }
+
+            $q->where($col, $op, $val);
+        }
+
+        return $q;
+    }
+
+    /**
+     * ============================
+     *  Helpers “DTO friendly”
+     * ============================
+     */
+
+    protected function allowedRelations(array $fallback): array
+    {
+        return property_exists($this->model, 'allowedRelations')
+            ? array_values((array) $this->model->allowedRelations)
+            : $fallback;
+    }
+
+    protected function resolveSortColumn(string $sortBy): ?string
+    {
+        $allowedSorts = property_exists($this->model, 'allowedSorts')
+            ? (array) $this->model->allowedSorts
+            : [];
+
+        if (!empty($allowedSorts)) {
+            if (!in_array($sortBy, $allowedSorts, true)) {
+                return $this->invalidQueryKey('sortBy', $sortBy);
+            }
+            return $sortBy;
+        }
+
+        return $this->resolveColumnIfExists($sortBy, 'sortBy');
+    }
+
+    protected function resolveFilterColumn(string $key): ?string
+    {
+        $allowedFilters = property_exists($this->model, 'allowedFilters')
+            ? (array) $this->model->allowedFilters
+            : [];
+
+        if (!empty($allowedFilters) && !in_array($key, $allowedFilters, true)) {
+            return $this->invalidQueryKey('filter', $key);
+        }
+
+        return $this->resolveColumnIfExists($key, 'filter');
+    }
+
+    protected function resolveColumnIfExists(string $col, string $context): ?string
+    {
+        $table = $this->model->getTable();
+
+        if (!Schema::hasColumn($table, $col)) {
+            return $this->invalidQueryKey($context, $col);
+        }
+
+        return $col;
+    }
+
+    protected function invalidQueryKey(string $context, string $key): ?string
+    {
+        if ($this->strictQuery) {
+            throw new \InvalidArgumentException("Invalid {$context}: {$key}");
+        }
+
+        return null;
     }
 }

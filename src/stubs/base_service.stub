@@ -1,98 +1,169 @@
 <?php
 
-declare(strict_types=1);
-
 namespace App\Services\Shared;
 
 use App\DTOs\Shared\IndexQueryDTO;
+use App\DTOs\Shared\PageDTO;
+use App\Mappers\Contracts\ICrudMapper;
 use App\Repositories\Contracts\IBaseRepository;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Pagination\LengthAwarePaginator;
 
-class BaseService implements IBaseService
+/**
+ * @template TModel of Model
+ * @template TListDTO
+ * @template TDetailDTO
+ * @template TCreateDTO of object
+ * @template TUpdateDTO of object
+ */
+abstract class BaseService implements IBaseService
 {
-    public function __construct(protected IBaseRepository $repo) {}
+    public function __construct(
+        protected IBaseRepository $repo,
+        protected ICrudMapper $mapper,
+        protected string $createDtoClass,
+        protected string $updateDtoClass,
+    ) {}
 
-    public function getAll(IndexQueryDTO $dto): LengthAwarePaginator
+    /* ============================================================
+     | GET ALL
+     ============================================================ */
+    public function getAll(IndexQueryDTO $dto): PageDTO
     {
         try {
-            $this->beforeGetAll($dto);
-            $result = $this->repo->getAll($dto);
-            $this->afterGetAll($dto, $result);
-            return $result;
+            $this->beforeGetAllDTO($dto);
+
+            $paginator = $this->repo->getAll($dto);
+
+            $page = $this->toPageDTO($paginator);
+
+            $this->afterGetAllDTO($dto, $page);
+
+            return $page;
         } catch (\Throwable $e) {
-            Log::error('BaseCrudService::getAll', ['ex' => $e]);
-            return new LengthAwarePaginator([], 0, $dto->perPage, $dto->page);
+            // Log com contexto útil
+            Log::error(static::class . '::getAll', [
+                'dto' => [
+                    'perPage' => $dto->perPage,
+                    'page' => $dto->page,
+                    'sortBy' => $dto->sortBy,
+                    'sortDir' => $dto->sortDir,
+                    'with' => $dto->with,
+                    'filters' => $dto->filters,
+                ],
+                'ex' => $e,
+            ]);
+
+            //  não mascara bug: deixa o Handler transformar em 500
+            throw $e;
         }
     }
 
-    public function getById(int|string $id, array $with = []): ?Model
+
+    /* ============================================================
+     | GET BY ID
+     ============================================================ */
+    public function getById(int|string $id, array $with = []): mixed
     {
         try {
-            $this->beforeGetById($id, $with);
+            $this->beforeGetByIdDTO($id, $with);
+
             $model = $this->repo->findById($id, $with);
-            if ($model) $this->afterGetById($model);
-            return $model;
+            if (!$model) {
+                return null;
+            }
+
+            $dto = $this->mapper->toDetailDTO($model);
+
+            $this->afterGetByIdDTO($id, $dto);
+
+            return $this->finalizeDto($dto);
         } catch (\Throwable $e) {
-            Log::warning('BaseCrudService::getById', ['id' => $id, 'ex' => $e]);
+            Log::warning(static::class . '::getById', ['id' => $id, 'ex' => $e]);
             return null;
         }
     }
 
-    public function create(array $data): Model
+    /* ============================================================
+     | CREATE
+     ============================================================ */
+    public function create(object $dto): mixed
     {
-        $this->beforeCreate($data);
-        $model = $this->repo->create($data);
-        $this->afterCreate($model);
-        return $model;
+        $dto = $this->assertDto($dto, $this->createDtoClass, 'Create');
+
+        try {
+            $this->beforeCreateDTO($dto);
+
+            $payload = $this->dtoToArray($dto);
+
+            $model = $this->repo->create($payload);
+
+            $this->afterCreateModel($model, $dto);
+
+            $detail = $this->mapper->toDetailDTO($model);
+
+            $this->afterCreateDTO($dto, $detail);
+
+            return $this->finalizeDto($detail);
+        } catch (\Throwable $e) {
+            Log::error(static::class . '::create', ['ex' => $e]);
+            throw $e;
+        }
     }
 
-    public function update(int|string $id, array $data): Model
+    /* ============================================================
+     | UPDATE
+     ============================================================ */
+    public function update(int|string $id, object $dto): mixed
     {
-        $this->beforeUpdate($id, $data);
-        $model = $this->repo->update($id, $data);
-        $this->afterUpdate($model);
-        return $model;
+        $dto = $this->assertDto($dto, $this->updateDtoClass, 'Update');
+
+        try {
+            $this->beforeUpdateDTO($id, $dto);
+
+            $payload = $this->dtoToArray($dto);
+
+            $model = $this->repo->update($id, $payload);
+
+            $this->afterUpdateModel($model, $dto);
+
+            $detail = $this->mapper->toDetailDTO($model);
+
+            $this->afterUpdateDTO($id, $dto, $detail);
+
+            return $this->finalizeDto($detail);
+        } catch (\Throwable $e) {
+            Log::error(static::class . '::update', ['id' => $id, 'ex' => $e]);
+            throw $e;
+        }
     }
 
+    /* ============================================================
+     | DELETE / RESTORE
+     ============================================================ */
     public function delete(int|string $id): bool
     {
-        try {
-            $this->beforeDelete($id);
-            $ok = $this->repo->delete($id);
-            $this->afterDelete($id, $ok);
-            return $ok;
-        } catch (\Throwable $e) {
-            Log::warning('BaseCrudService::delete', ['id' => $id, 'ex' => $e]);
-            return false;
-        }
+        $this->beforeDeleteDTO($id);
+        $ok = $this->repo->delete($id);
+        $this->afterDeleteDTO($id, $ok);
+        return $ok;
     }
 
     public function restore(int|string $id): bool
     {
-        try {
-            $this->beforeRestore($id);
-            $ok = $this->repo->restore($id);
-            $this->afterRestore($id, $ok);
-            return $ok;
-        } catch (\Throwable $e) {
-            Log::warning('BaseCrudService::restore', ['id' => $id, 'ex' => $e]);
-            return false;
-        }
+        $this->beforeRestoreDTO($id);
+        $ok = $this->repo->restore($id);
+        $this->afterRestoreDTO($id, $ok);
+        return $ok;
     }
 
     public function forceDelete(int|string $id): bool
     {
-        try {
-            $this->beforeForceDelete($id);
-            $ok = $this->repo->forceDelete($id);
-            $this->afterForceDelete($id, $ok);
-            return $ok;
-        } catch (\Throwable $e) {
-            Log::warning('BaseCrudService::forceDelete', ['id' => $id, 'ex' => $e]);
-            return false;
-        }
+        $this->beforeForceDeleteDTO($id);
+        $ok = $this->repo->forceDelete($id);
+        $this->afterForceDeleteDTO($id, $ok);
+        return $ok;
     }
 
     public function deactivate(int|string $id): bool
@@ -105,51 +176,58 @@ class BaseService implements IBaseService
         return $this->restore($id);
     }
 
+    /* ============================================================
+     | BULK
+     ============================================================ */
     public function bulkDelete(array $ids): int
     {
-        try {
-            $this->beforeBulkDelete($ids);
-            $n = $this->repo->bulkDelete($ids);
-            $this->afterBulkDelete($ids, $n);
-            return $n;
-        } catch (\Throwable $e) {
-            Log::warning('BaseCrudService::bulkDelete', ['ids' => $ids, 'ex' => $e]);
-            return 0;
-        }
+        $this->beforeBulkDeleteDTO($ids);
+        $count = $this->repo->bulkDelete($ids);
+        $this->afterBulkDeleteDTO($ids, $count);
+        return $count;
     }
 
     public function bulkForceDelete(array $ids): int
     {
-        try {
-            $this->beforeBulkForceDelete($ids);
-            $n = $this->repo->bulkForceDelete($ids);
-            $this->afterBulkForceDelete($ids, $n);
-            return $n;
-        } catch (\Throwable $e) {
-            Log::warning('BaseCrudService::bulkForceDelete', ['ids' => $ids, 'ex' => $e]);
-            return 0;
-        }
+        $this->beforeBulkForceDeleteDTO($ids);
+        $count = $this->repo->bulkForceDelete($ids);
+        $this->afterBulkForceDeleteDTO($ids, $count);
+        return $count;
     }
 
     public function bulkRestore(array $ids): int
     {
-        try {
-            $this->beforeBulkRestore($ids);
-            $n = $this->repo->bulkRestore($ids);
-            $this->afterBulkRestore($ids, $n);
-            return $n;
-        } catch (\Throwable $e) {
-            Log::warning('BaseCrudService::bulkRestore', ['ids' => $ids, 'ex' => $e]);
-            return 0;
-        }
+        $this->beforeBulkRestoreDTO($ids);
+        $count = $this->repo->bulkRestore($ids);
+        $this->afterBulkRestoreDTO($ids, $count);
+        return $count;
     }
 
+    protected function toPageDTO(LengthAwarePaginator $paginator): PageDTO
+    {
+        return new PageDTO(
+            data: array_map(
+                fn($item) => $this->finalizeDto(
+                    $this->mapper->toListItemDTO($item)
+                ),
+                $paginator->items()
+            ),
+            currentPage: max(0, $paginator->currentPage() - 1), // frontend 0-based
+            totalPages: $paginator->lastPage(),
+            pageSize: $paginator->perPage(),
+            totalCount: $paginator->total()
+        );
+    }
+
+    /* ============================================================
+     | EXISTS / COUNT   (faltavam no contrato)
+     ============================================================ */
     public function exists(array $where): bool
     {
         try {
             return $this->repo->exists($where);
         } catch (\Throwable $e) {
-            Log::warning('BaseCrudService::exists', ['where' => $where, 'ex' => $e]);
+            Log::warning(static::class . '::exists', ['where' => $where, 'ex' => $e]);
             return false;
         }
     }
@@ -159,29 +237,77 @@ class BaseService implements IBaseService
         try {
             return $this->repo->count($where);
         } catch (\Throwable $e) {
-            Log::warning('BaseCrudService::count', ['where' => $where, 'ex' => $e]);
+            Log::warning(static::class . '::count', ['where' => $where, 'ex' => $e]);
             return 0;
         }
     }
 
-    protected function beforeGetAll(IndexQueryDTO $dto): void {}
-    protected function afterGetAll(IndexQueryDTO $dto, LengthAwarePaginator $paginator): void {}
-    protected function beforeGetById(int|string $id, array $with): void {}
-    protected function afterGetById(Model $model): void {}
-    protected function beforeCreate(array &$data): void {}
-    protected function afterCreate(Model $model): void {}
-    protected function beforeUpdate(int|string $id, array &$data): void {}
-    protected function afterUpdate(Model $model): void {}
-    protected function beforeDelete(int|string $id): void {}
-    protected function afterDelete(int|string $id, bool $ok): void {}
-    protected function beforeRestore(int|string $id): void {}
-    protected function afterRestore(int|string $id, bool $ok): void {}
-    protected function beforeForceDelete(int|string $id): void {}
-    protected function afterForceDelete(int|string $id, bool $ok): void {}
-    protected function beforeBulkDelete(array $ids): void {}
-    protected function afterBulkDelete(array $ids, int $deleted): void {}
-    protected function beforeBulkForceDelete(array $ids): void {}
-    protected function afterBulkForceDelete(array $ids, int $deleted): void {}
-    protected function beforeBulkRestore(array $ids): void {}
-    protected function afterBulkRestore(array $ids, int $restored): void {}
+    /* ============================================================
+     | Helpers
+     ============================================================ */
+
+    protected function dtoToArray(object $dto): array
+    {
+        if (!method_exists($dto, 'toArray')) {
+            throw new \InvalidArgumentException(
+                sprintf('DTO %s must implement toArray()', get_class($dto))
+            );
+        }
+
+        return $dto->toArray();
+    }
+
+    protected function assertDto(object $dto, string $expected, string $label): object
+    {
+        if (!$dto instanceof $expected) {
+            throw new \InvalidArgumentException(
+                sprintf('Invalid %s DTO. Expected %s, got %s', $label, $expected, get_class($dto))
+            );
+        }
+
+        return $dto;
+    }
+
+    protected function finalizeDto(mixed $dto): mixed
+    {
+        return is_object($dto) && method_exists($dto, 'toArray')
+            ? $dto->toArray()
+            : $dto;
+    }
+
+    /* ============================================================
+     | HOOKS (DTO-only)
+     ============================================================ */
+
+    protected function beforeGetAllDTO(IndexQueryDTO $dto): void {}
+    protected function afterGetAllDTO(IndexQueryDTO $dto, PageDTO $page): void {}
+
+    protected function beforeGetByIdDTO(int|string $id, array $with): void {}
+    protected function afterGetByIdDTO(int|string $id, object $detailDto): void {}
+
+    protected function beforeCreateDTO(object $dto): void {}
+    protected function afterCreateModel(Model $model, object $dto): void {}
+    protected function afterCreateDTO(object $dto, object $detailDto): void {}
+
+    protected function beforeUpdateDTO(int|string $id, object $dto): void {}
+    protected function afterUpdateModel(Model $model, object $dto): void {}
+    protected function afterUpdateDTO(int|string $id, object $dto, object $detailDto): void {}
+
+    protected function beforeDeleteDTO(int|string $id): void {}
+    protected function afterDeleteDTO(int|string $id, bool $ok): void {}
+
+    protected function beforeRestoreDTO(int|string $id): void {}
+    protected function afterRestoreDTO(int|string $id, bool $ok): void {}
+
+    protected function beforeForceDeleteDTO(int|string $id): void {}
+    protected function afterForceDeleteDTO(int|string $id, bool $ok): void {}
+
+    protected function beforeBulkDeleteDTO(array $ids): void {}
+    protected function afterBulkDeleteDTO(array $ids, int $count): void {}
+
+    protected function beforeBulkForceDeleteDTO(array $ids): void {}
+    protected function afterBulkForceDeleteDTO(array $ids, int $count): void {}
+
+    protected function beforeBulkRestoreDTO(array $ids): void {}
+    protected function afterBulkRestoreDTO(array $ids, int $count): void {}
 }

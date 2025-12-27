@@ -2,13 +2,23 @@
 
 namespace {{service_namespace}};
 
+use {{create_dto_fqcn}};
+use {{update_dto_fqcn}};
+use {{mapper_fqcn}};
 use {{repo_contract_fqcn}};
-use {{base_service_fqcn}} as BaseService;
+use {{base_service_fqcn}};
 
-class {{Class}}Service extends BaseService implements I{{Class}}Service
+final class {{Class}}Service extends BaseService implements I{{Class}}Service
 {
-    public function __construct({{repo_contract_short}} $repository)
-    {
-        parent::__construct($repository);
+    public function __construct(
+        {{repo_contract_short}} $repository,
+        {{mapper_short}} $mapper,
+    ) {
+        parent::__construct(
+            repo: $repository,
+            mapper: $mapper,
+            createDtoClass: {{create_dto_short}}::class,
+            updateDtoClass: {{update_dto_short}}::class,
+        );
     }
 }

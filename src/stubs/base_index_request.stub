@@ -14,10 +14,26 @@ abstract class BaseIndexRequest extends FormRequest
     public function rules(): array
     {
         return array_merge([
-            'perPage' => ['sometimes', 'integer', 'min:1', 'max:200'],
-            'page'    => ['sometimes', 'integer', 'min:1'],
-            'sortBy'  => ['sometimes', 'string', 'max:50'],
-            'sortDir' => ['sometimes', 'in:asc,desc'],
+            'perPage'  => ['sometimes', 'integer', 'min:1', 'max:200'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],
+            'pageSize' => ['sometimes', 'integer', 'min:1', 'max:200'],
+            'PageSize' => ['sometimes', 'integer', 'min:1', 'max:200'],
+
+            // page 1-based
+            'page'       => ['sometimes', 'integer', 'min:1'],
+            // page 0-based (front)
+            'PageNumber' => ['sometimes', 'integer', 'min:0'],
+            'currentPage' => ['sometimes', 'integer', 'min:0'],
+
+            // sort
+            'sortBy' => ['sometimes', 'string', 'max:50'],
+            'sort_by' => ['sometimes', 'string', 'max:50'],
+            'SortBy' => ['sometimes', 'string', 'max:50'],
+
+            'sortDir'    => ['sometimes', 'in:asc,desc'],
+            'sort_dir'   => ['sometimes', 'in:asc,desc'],
+            'Direction'  => ['sometimes', 'in:asc,desc,ASC,DESC'],
+
             'with'    => ['sometimes'],
             'filters' => ['sometimes', 'array'],
         ], $this->filtersRules());
@@ -30,58 +46,18 @@ abstract class BaseIndexRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        // 1) Normaliza "with" string -> array
+        // normaliza Direction pra asc/desc
+        $direction = $this->input('Direction');
+        if (is_string($direction)) {
+            $this->merge(['Direction' => strtolower($direction)]);
+        }
+
+        // normaliza with string "a,b"
         $with = $this->input('with');
         if (is_string($with)) {
             $this->merge([
                 'with' => array_values(array_filter(array_map('trim', explode(',', $with)))),
             ]);
         }
-
-        // 2) Limpa todo o payload: trim strings, '' -> null (recursivo)
-        $input = $this->all();
-
-        $clean = function ($value) use (&$clean) {
-            if (is_string($value)) {
-                $v = trim($value);
-                return $v === '' ? null : $v;
-            }
-            if (is_array($value)) {
-                $out = [];
-                foreach ($value as $k => $v) {
-                    $cv = $clean($v);
-                    $out[$k] = $cv;
-                }
-                return $out;
-            }
-            return $value;
-        };
-
-        $input = $clean($input);
-
-        // 3) Remove chaves vazias dentro de filters (null, [], '')
-        $pruneEmpty = function ($arr) use (&$pruneEmpty) {
-            if (!is_array($arr)) return $arr;
-            $out = [];
-            foreach ($arr as $k => $v) {
-                if (is_array($v)) {
-                    $pv = $pruneEmpty($v);
-                    if ($pv !== [] && $pv !== null) $out[$k] = $pv;
-                } else {
-                    if (!is_null($v)) $out[$k] = $v;
-                }
-            }
-            return $out;
-        };
-
-        if (isset($input['filters']) && is_array($input['filters'])) {
-            $input['filters'] = $pruneEmpty($input['filters']);
-            if ($input['filters'] === []) {
-                unset($input['filters']);
-            }
-        }
-
-        // 4) Reinsere o payload limpo
-        $this->replace($input);
     }
 }

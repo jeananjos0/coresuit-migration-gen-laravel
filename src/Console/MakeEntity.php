@@ -12,6 +12,8 @@ use CoreSuit\MigrationGen\Generators\MigrationColumnsBuilder;
 use CoreSuit\MigrationGen\Generators\ModelArtifactsBuilder;
 use CoreSuit\MigrationGen\Generators\RequestArtifactsBuilder;
 use CoreSuit\MigrationGen\Generators\ControllerArtifactsBuilder;
+use CoreSuit\MigrationGen\Generators\DtoArtifactsBuilder;
+
 
 class MakeEntity extends Command
 {
@@ -83,7 +85,9 @@ class MakeEntity extends Command
         private MigrationColumnsBuilder $migrationBuilder,
         private ModelArtifactsBuilder $modelBuilder,
         private RequestArtifactsBuilder $requestBuilder,
-        private ControllerArtifactsBuilder $controllerBuilder
+        private ControllerArtifactsBuilder $controllerBuilder,
+        private DtoArtifactsBuilder $dtoBuilder,
+
     ) {
         parent::__construct();
     }
@@ -129,7 +133,16 @@ class MakeEntity extends Command
 
         // ---------- MODEL ----------
         if (!$this->option('no-model')) {
-            [$fillableList, $castsList, $relationsList, $phpDocProperties] = $this->modelBuilder->build($fields);
+            [
+                $fillableList,
+                $castsList,
+                $relationsList,
+                $phpDocProperties,
+                $allowedSorts,
+                $allowedFilters,
+                $allowedRelations
+            ] = $this->modelBuilder->build($fields);
+
 
             $modelStubPath = $this->stubResolver->resolve((string) $this->option('stub-model'), 'model');
             $modelStub     = $filesystem->get($modelStubPath);
@@ -137,20 +150,125 @@ class MakeEntity extends Command
             $modelFilePath = app_path("Models/{$className}.php");
 
             $modelContents = $this->populate($modelStub, [
-                'Class'        => $className,
-                'table'        => $tableName,
-                'primaryKey'   => 'id',
-                'keyType'      => 'int',
-                'fillable'     => $this->lines($fillableList, 8),
-                'casts'        => $this->lines($castsList, 8),
-                'relations'    => $this->lines($relationsList, 0),
-                'phpdoc_props' => $this->lines($phpDocProperties, 1),
-                'hidden'       => '',
-                'appends'      => '',
+                'Class'            => $className,
+                'model_namespace'  => (string) ($this->option('model-namespace') ?? 'App\\Models'),
+                'table'            => $tableName,
+                'primaryKey'       => 'id',
+                'keyType'          => 'int',
+                'allowed_sorts'     => implode(', ', array_map(fn($v) => "'{$v}'", $allowedSorts)),
+                'allowed_filters'   => implode(', ', array_map(fn($v) => "'{$v}'", $allowedFilters)),
+                'allowed_relations' => implode(', ', array_map(fn($v) => "'{$v}'", $allowedRelations)),
+                'fillable'         => $this->lines($fillableList, 8),
+                'casts'            => $this->lines($castsList, 8),
+                'relations'        => $this->lines($relationsList, 0),
+                'phpdoc_props'     => $this->lines($phpDocProperties, 1),
+                'hidden'           => '',
+                'appends'          => '',
             ]);
+
 
             $this->writeFile($filesystem, $modelFilePath, $modelContents, $force, 'Model');
         }
+
+
+        // ---------- DTOs + Mapper ----------
+        if (!$this->option('no-dtos') || !$this->option('no-mapper')) {
+            $dtoNsRoot = 'App\\DTOs';
+            $dtoNamespace = $dtoNsRoot . "\\{$className}";
+            $dtoDir = base_path("app/DTOs/{$className}");
+
+            $mapperNamespace = 'App\\Mappers';
+            $mapperDir = base_path("app/Mappers");
+
+            $modelNs = (string) ($this->option('model-namespace') ?? 'App\\Models');
+            $modelFqcn = "{$modelNs}\\{$className}";
+
+            $built = $this->dtoBuilder->build($className, $fields);
+
+            if (!$this->option('no-dtos')) {
+                // CREATE DTO
+                $stubPath = $this->stubResolver->resolve((string) $this->option('stub-dto_create'), 'dto_create');
+                $stub = $filesystem->get($stubPath);
+
+                $content = $this->populate($stub, [
+                    'dto_namespace' => $dtoNamespace,
+                    'Class' => $className,
+                    'ctor_props' => $this->lines($built['create']['ctor_props'], 0),
+                    'from_validated_named_args' => $this->lines($built['create']['from_validated_named_args'], 0),
+                    'to_array' => $this->lines($built['create']['to_array'], 0),
+                ]);
+
+                $this->writeFile($filesystem, $dtoDir . "/{$className}CreateDTO.php", $content, $force, 'DTO (Create)');
+
+                // UPDATE DTO
+                $stubPath = $this->stubResolver->resolve((string) $this->option('stub-dto_update'), 'dto_update');
+                $stub = $filesystem->get($stubPath);
+
+                $content = $this->populate($stub, [
+                    'dto_namespace' => $dtoNamespace,
+                    'Class' => $className,
+                    'ctor_props' => $this->lines($built['update']['ctor_props'], 0),
+                    'from_validated_named_args' => $this->lines($built['update']['from_validated_named_args'], 0),
+                    'to_array' => $this->lines($built['update']['to_array'], 0),
+                ]);
+
+                $this->writeFile($filesystem, $dtoDir . "/{$className}UpdateDTO.php", $content, $force, 'DTO (Update)');
+
+                // LIST ITEM DTO
+                $stubPath = $this->stubResolver->resolve((string) $this->option('stub-dto_list_item'), 'dto_list_item');
+                $stub = $filesystem->get($stubPath);
+
+                $content = $this->populate($stub, [
+                    'dto_namespace' => $dtoNamespace,
+                    'Class' => $className,
+                    'ctor_props' => $this->lines($built['list_item']['ctor_props'], 0),
+                    'to_array' => $this->lines($built['list_item']['to_array'], 0),
+                ]);
+
+                $this->writeFile($filesystem, $dtoDir . "/{$className}ListItemDTO.php", $content, $force, 'DTO (ListItem)');
+
+                // DETAIL DTO
+                $stubPath = $this->stubResolver->resolve((string) $this->option('stub-dto_detail'), 'dto_detail');
+                $stub = $filesystem->get($stubPath);
+
+                $content = $this->populate($stub, [
+                    'dto_namespace' => $dtoNamespace,
+                    'Class' => $className,
+                    'ctor_props' => $this->lines($built['detail']['ctor_props'], 0),
+                    'to_array' => $this->lines($built['detail']['to_array'], 0),
+                ]);
+
+                $this->writeFile($filesystem, $dtoDir . "/{$className}DetailDTO.php", $content, $force, 'DTO (Detail)');
+            }
+
+            if (!$this->option('no-mapper')) {
+                $detailDtoFqcn = "{$dtoNamespace}\\{$className}DetailDTO";
+                $listDtoFqcn = "{$dtoNamespace}\\{$className}ListItemDTO";
+
+                $stubPath = $this->stubResolver->resolve((string) $this->option('stub-mapper'), 'mapper');
+                $stub = $filesystem->get($stubPath);
+
+                $content = $this->populate($stub, [
+                    'mapper_namespace' => $mapperNamespace,
+                    'Class' => $className,
+                    'detail_dto_fqcn' => $detailDtoFqcn,
+                    'list_dto_fqcn' => $listDtoFqcn,
+                    'mapper_contract_fqcn' => 'App\\Mappers\\Contracts\\ICrudMapper',
+                    'model_fqcn' => $modelFqcn,
+
+                    'model_short' => $className,
+                    'detail_dto_short' => "{$className}DetailDTO",
+                    'list_dto_short' => "{$className}ListItemDTO",
+
+                    'list_dto_named_args' => $this->lines($built['list_item']['named_args'], 0),
+                    'detail_dto_named_args' => $this->lines($built['detail']['named_args'], 0),
+                ]);
+
+                $this->writeFile($filesystem, $mapperDir . "/{$className}Mapper.php", $content, $force, 'Mapper');
+            }
+        }
+
+
 
         // ---------- REPOSITORY + INTERFACE ----------
         if (!$this->option('no-repo')) {
@@ -205,6 +323,14 @@ class MakeEntity extends Command
             $baseServiceFq  = (string) ($this->option('base-service') ?? 'App\\Services\\Shared\\BaseService');
             $baseIServiceFq = (string) ($this->option('base-iservice') ?? 'App\\Services\\Shared\\IBaseService');
 
+            $dtoNsRoot = 'App\\DTOs';
+            $createDtoFq = $dtoNsRoot . "\\{$className}\\{$className}CreateDTO";
+            $updateDtoFq = $dtoNsRoot . "\\{$className}\\{$className}UpdateDTO";
+
+            $mapperFq = "App\\Mappers\\{$className}Mapper";
+            $mapperShort = "{$className}Mapper";
+
+
             $serviceNs      = $serviceNsRoot . "\\{$className}";
             $servicePathDir = $serviceDir . "/{$className}";
             $irepoFq        = (string) (($this->option('contracts-namespace') ?? 'App\\Repositories\\Contracts') . "\\I{$className}Repository");
@@ -232,6 +358,15 @@ class MakeEntity extends Command
                 'repo_contract_fqcn'  => $irepoFq,
                 'repo_contract_short' => $irepoShort,
                 'base_service_fqcn'   => $baseServiceFq,
+
+                'create_dto_fqcn'     => $createDtoFq,
+                'update_dto_fqcn'     => $updateDtoFq,
+                'create_dto_short'    => "{$className}CreateDTO",
+                'update_dto_short'    => "{$className}UpdateDTO",
+
+                'mapper_fqcn'         => $mapperFq,
+                'mapper_short'        => $mapperShort,
+
                 'Class'               => $className,
             ]);
 
@@ -296,6 +431,11 @@ class MakeEntity extends Command
             $controllerDir = base_path((string) ($this->option('controller-dir') ?? 'app/Http/Controllers/System'));
             $baseCtrlFq    = (string) ($this->option('base-controller') ?? 'App\\Http\\Controllers\\Shared\\BaseController');
 
+            $dtoNsRoot = 'App\\DTOs';
+            $createDtoFq = $dtoNsRoot . "\\{$className}\\{$className}CreateDTO";
+            $updateDtoFq = $dtoNsRoot . "\\{$className}\\{$className}UpdateDTO";
+
+
             $reqNsRoot     = (string) ($this->option('requests-namespace') ?? 'App\\Http\\Requests');
             $reqNs         = $reqNsRoot . "\\{$className}";
             $indexReqFq    = $reqNs . "\\{$className}ListRequest";
@@ -309,7 +449,7 @@ class MakeEntity extends Command
             $routePrefix   = (string) ($this->option('route-prefix') ?? Str::of($className)->snake()->toString());
             $tag           = (string) ($this->option('tag') ?? $className);
             $tagLower      = Str::of($tag)->snake(' ')->toString();
-            $tagLowerPlural= Str::of($tag)->snake(' ')->plural()->toString();
+            $tagLowerPlural = Str::of($tag)->snake(' ')->plural()->toString();
 
             [$withArr, $filtersParams, $storeProps, $updateProps, $storeRequired] =
                 $this->controllerBuilder->build($fields);
@@ -342,6 +482,11 @@ class MakeEntity extends Command
                 'store_body_properties'   => $this->commaLines($storeProps,  ' *       '),
                 'update_body_properties'  => $this->commaLines($updateProps, ' *       '),
                 'Class'                   => $className,
+                'create_dto_fqcn'   => $createDtoFq,
+                'update_dto_fqcn'   => $updateDtoFq,
+                'create_dto_short'  => "{$className}CreateDTO",
+                'update_dto_short'  => "{$className}UpdateDTO",
+
             ]);
 
             $file = $controllerDir . "/{$className}Controller.php";
@@ -395,7 +540,7 @@ PHP;
             $serviceNsRoot      = (string) ($this->option('service-namespace') ?? 'App\\Services');
 
             $repoProviderPath   = base_path((string) ($this->option('repo-provider-file') ?? 'app/Providers/RepositoryServiceProvider.php'));
-            $serviceProviderPath= base_path((string) ($this->option('service-provider-file') ?? 'app/Providers/ServicesServiceProvider.php'));
+            $serviceProviderPath = base_path((string) ($this->option('service-provider-file') ?? 'app/Providers/ServicesServiceProvider.php'));
             $marker             = (string) ($this->option('provider-marker') ?? '[coresuit_providers]');
 
             $iRepoFq  = "{$contractsNs}\\I{$className}Repository";

@@ -15,20 +15,34 @@ final class IndexQueryDTO
     {
         $dto = new self();
 
-        $dto->perPage = (int)($data['perPage'] ?? $data['per_page'] ?? 15);
-        $dto->page    = (int)($data['page'] ?? 1);
+        $dto->perPage = (int)($data['perPage'] ?? $data['per_page'] ?? $data['pageSize'] ?? $data['PageSize'] ?? 15);
+        $dto->perPage = max(1, min($dto->perPage, 200));
 
-        $dto->sortBy  = $data['sortBy'] ?? null;
+        if (isset($data['PageNumber'])) {
+            $dto->page = ((int)$data['PageNumber']) + 1; // 0-based -> 1-based
+        } elseif (isset($data['currentPage'])) {
+            $dto->page = ((int)$data['currentPage']) + 1; // 0-based -> 1-based
+        } else {
+            $dto->page = (int)($data['page'] ?? 1); // 1-based
+        }
+        $dto->page = max(1, $dto->page);
 
-        $sortDir      = $data['sortDir'] ?? 'asc';
+        // sortBy: sortBy/sort_by/SortBy
+        $dto->sortBy = $data['sortBy'] ?? $data['sort_by'] ?? $data['SortBy'] ?? null;
+
+        // sortDir: sortDir/sort_dir/Direction
+        $sortDir = $data['sortDir'] ?? $data['sort_dir'] ?? $data['Direction'] ?? 'asc';
+        $sortDir = is_string($sortDir) ? strtolower($sortDir) : 'asc';
         $dto->sortDir = in_array($sortDir, ['asc', 'desc'], true) ? $sortDir : 'asc';
 
+        // with (array ou "a,b,c")
         $with = $data['with'] ?? [];
         if (is_string($with)) {
             $with = array_values(array_filter(array_map('trim', explode(',', $with))));
         }
         $dto->with = array_values(array_unique((array)$with));
 
+        // filters
         $dto->filters = is_array($data['filters'] ?? null) ? $data['filters'] : [];
 
         return $dto;

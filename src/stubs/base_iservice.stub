@@ -3,15 +3,14 @@
 namespace App\Services\Shared;
 
 use App\DTOs\Shared\IndexQueryDTO;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Pagination\LengthAwarePaginator;
+use App\DTOs\Shared\PageDTO;
 
 interface IBaseService
 {
-    public function getAll(IndexQueryDTO $dto): LengthAwarePaginator;
-    public function getById(int|string $id, array $with = []): ?Model;
-    public function create(array $data): Model;
-    public function update(int|string $id, array $data): Model;
+    public function getAll(IndexQueryDTO $dto): PageDTO;
+    public function getById(int|string $id, array $with = []): mixed;
+    public function create(object $dto): mixed;
+    public function update(int|string $id, object $dto): mixed;
     public function delete(int|string $id): bool;
     public function restore(int|string $id): bool;
     public function forceDelete(int|string $id): bool;

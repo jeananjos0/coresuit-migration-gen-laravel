@@ -1,0 +1,17 @@
+<?php
+
+namespace {{dto_namespace}};
+
+final class {{Class}}DetailDTO
+{
+    public function __construct(
+{{ctor_props}}
+    ) {}
+
+    public function toArray(): array
+    {
+        return [
+{{to_array}}
+        ];
+    }
+}

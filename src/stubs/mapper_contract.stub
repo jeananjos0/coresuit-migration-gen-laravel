@@ -1,0 +1,25 @@
+<?php
+
+namespace {{mapper_contracts_namespace}};
+
+use Illuminate\Database\Eloquent\Model;
+
+/**
+ * @template TModel of Model
+ * @template TListDTO
+ * @template TDetailDTO
+ */
+interface ICrudMapper
+{
+    /**
+     * @param TModel $model
+     * @return TListDTO
+     */
+    public function toListItemDTO(Model $model): mixed;
+
+    /**
+     * @param TModel $model
+     * @return TDetailDTO
+     */
+    public function toDetailDTO(Model $model): mixed;
+}

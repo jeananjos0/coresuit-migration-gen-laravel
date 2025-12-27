@@ -31,6 +31,10 @@ class MakeInit extends Command
             'app/Http/Requests/Shared/BaseIndexRequest.php'  => 'base_index_request.stub',
             'app/Http/Requests/Shared/IndexRequest.php'      => 'index_request.stub',
             'app/Http/Controllers/Shared/BaseController.php' => 'base_controller.stub',
+            'app/DTOs/Shared/PageDTO.php'                    => 'dto_page.stub',
+            'app/Mappers/Contracts/ICrudMapper.php'          => 'mapper_contract.stub',
+
+
 
             // OpenAPI (@OA\OpenApi + Info/Security globais)
             'app/OpenApi/OpenApi.php'                        => 'openapi_boot.stub',

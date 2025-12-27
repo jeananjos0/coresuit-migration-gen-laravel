@@ -1,0 +1,24 @@
+<?php
+
+namespace {{dto_namespace}};
+
+final class {{Class}}UpdateDTO
+{
+    public function __construct(
+{{ctor_props}}
+    ) {}
+
+    public static function fromValidated(array $data): self
+    {
+        return new self(
+{{from_validated_named_args}}
+        );
+    }
+
+    public function toArray(): array
+    {
+        return [
+{{to_array}}
+        ];
+    }
+}

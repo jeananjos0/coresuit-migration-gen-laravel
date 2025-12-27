@@ -2,90 +2,176 @@
 
 namespace App\Http\Controllers\Shared;
 
-use App\Http\Controllers\Controller;
+use App\DTOs\Shared\IndexQueryDTO;
 use App\Services\Shared\IBaseService;
+use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-abstract class BaseController extends Controller
+abstract class BaseController extends \App\Http\Controllers\Controller
 {
     public function __construct(protected IBaseService $service) {}
 
+    // =========================
+    // Requests (FormRequest)
+    // =========================
+    /** @return class-string<FormRequest> */
     abstract protected function indexRequestClass(): string;
+
+    /** @return class-string<FormRequest> */
     abstract protected function storeRequestClass(): string;
+
+    /** @return class-string<FormRequest> */
     abstract protected function updateRequestClass(): string;
 
+    /**
+     * Retorne o FQCN do DTO de CREATE (ex: SubscriptionPlanCreateDTO::class)
+     * @return class-string
+     */
+    abstract protected function createDtoClass(): string;
+
+    /**
+     * Retorne o FQCN do DTO de UPDATE (ex: SubscriptionPlanUpdateDTO::class)
+     * @return class-string
+     */
+    abstract protected function updateDtoClass(): string;
+
+    /**
+     * Relações default para show (e opcionalmente index se você quiser manter).
+     */
     protected function defaultWith(): array
     {
         return [];
     }
 
-    protected function transform(mixed $payload): mixed
-    {
-        return $payload;
-    }
+    // =========================
+    // Actions
+    // =========================
 
     public function index(Request $request): JsonResponse
     {
         $payload = $this->validateWithFormRequest($this->indexRequestClass(), $request);
 
+        // mantém seu padrão (com merge do with)
         $payload['with'] = array_values(array_unique(array_merge(
             $this->defaultWith(),
-            (array)($payload['with'] ?? [])
+            (array) ($payload['with'] ?? [])
         )));
 
-        $dto = \App\DTOs\Shared\IndexQueryDTO::fromArray($payload);
+        $dto = IndexQueryDTO::fromArray($payload);
 
-        $result = $this->service->getAll($dto);
-        return response()->json($this->transform($result), Response::HTTP_OK);
+        // Service já devolve PageDTO (array no toArray)
+        $page = $this->service->getAll($dto);
+
+        return response()->json(
+            is_object($page) && method_exists($page, 'toArray') ? $page->toArray() : $page,
+            Response::HTTP_OK
+        );
     }
 
     public function show(int $id): JsonResponse
     {
-        $model = $this->service->getById($id, with: $this->defaultWith());
-        abort_if(!$model, Response::HTTP_NOT_FOUND, 'Registro não encontrado.');
-        return response()->json($this->transform($model), Response::HTTP_OK);
+        // Service já devolve DetailDTO (array no toArray) ou null
+        $result = $this->service->getById($id, with: $this->defaultWith());
+
+        abort_if(!$result, Response::HTTP_NOT_FOUND, 'Registro não encontrado.');
+
+        return response()->json($result, Response::HTTP_OK);
     }
 
     public function store(Request $request): JsonResponse
     {
-        $data  = $this->validateWithFormRequest($this->storeRequestClass(), $request);
-        $model = $this->service->create($data);
-        return response()->json($this->transform($model), Response::HTTP_CREATED);
+        $data = $this->validateWithFormRequest($this->storeRequestClass(), $request);
+
+        $dto = $this->makeDto($this->createDtoClass(), $data);
+
+        // Service só aceita DTO (object)
+        $result = $this->service->create($dto);
+
+        return response()->json($result, Response::HTTP_CREATED);
     }
 
     public function update(Request $request, int $id): JsonResponse
     {
-        $data  = $this->validateWithFormRequest($this->updateRequestClass(), $request);
-        $model = $this->service->update($id, $data);
-        return response()->json($this->transform($model), Response::HTTP_OK);
+        $data = $this->validateWithFormRequest($this->updateRequestClass(), $request);
+
+        $dto = $this->makeDto($this->updateDtoClass(), $data);
+
+        // Service só aceita DTO (object)
+        $result = $this->service->update($id, $dto);
+
+        return response()->json($result, Response::HTTP_OK);
     }
 
     public function destroy(int $id): JsonResponse
     {
         $ok = $this->service->deactivate($id);
+
         abort_unless($ok, Response::HTTP_NOT_FOUND, 'Registro não encontrado.');
+
         return response()->json(null, Response::HTTP_NO_CONTENT);
     }
 
     public function restore(int $id): JsonResponse
     {
         $ok = $this->service->activate($id);
+
         abort_unless($ok, Response::HTTP_NOT_FOUND, 'Registro não encontrado.');
+
         return response()->json(['restored' => true], Response::HTTP_OK);
     }
 
     public function forceDelete(int $id): JsonResponse
     {
         $ok = $this->service->forceDelete($id);
+
         abort_unless($ok, Response::HTTP_NOT_FOUND, 'Registro não encontrado.');
+
         return response()->json(null, Response::HTTP_NO_CONTENT);
     }
 
+    // =========================
+    // Helpers
+    // =========================
+
+    /**
+     *  Framework rule:
+     * Todo DTO de request DEVE implementar:
+     *   public static function fromValidated(array $data): self
+     *
+     * @param class-string $dtoClass
+     */
+    protected function makeDto(string $dtoClass, array $validated): object
+    {
+        if (!class_exists($dtoClass)) {
+            throw new \InvalidArgumentException("DTO class not found: {$dtoClass}");
+        }
+
+        if (!method_exists($dtoClass, 'fromValidated')) {
+            throw new \InvalidArgumentException(
+                "DTO {$dtoClass} must implement: public static function fromValidated(array \$data): self"
+            );
+        }
+
+        /** @var object $dto */
+        $dto = $dtoClass::fromValidated($validated);
+
+        if (!$dto instanceof $dtoClass) {
+            throw new \InvalidArgumentException(
+                "DTO {$dtoClass}::fromValidated() must return instance of {$dtoClass}"
+            );
+        }
+
+        return $dto;
+    }
+
+    /**
+     * @param class-string<FormRequest> $formRequestClass
+     */
     protected function validateWithFormRequest(string $formRequestClass, Request $request): array
     {
-        /** @var \Illuminate\Foundation\Http\FormRequest $form */
+        /** @var FormRequest $form */
         $form = $formRequestClass::createFromBase($request);
 
         $form->setContainer(app())->setRedirector(app('redirect'));

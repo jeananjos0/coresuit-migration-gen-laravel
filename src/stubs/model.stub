@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Models;
+namespace {{model_namespace}};
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,6 +12,24 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class {{Class}} extends Model
 {
     use HasFactory, SoftDeletes;
+
+    /**
+     * Campos permitidos para ordenação (obrigatório no scaffold).
+     * Ex: ['id','name','created_at']
+     */
+    public array $allowedSorts = [{{allowed_sorts}}];
+
+    /**
+     * Campos permitidos para filtro (obrigatório no scaffold).
+     * Ex: ['name','active']
+     */
+    public array $allowedFilters = [{{allowed_filters}}];
+
+    /**
+     * Relações permitidas no ?with= (obrigatório no scaffold).
+     * Ex: ['company','items']
+     */
+    public array $allowedRelations = [{{allowed_relations}}];
 
     protected $table = '{{table}}';
     protected $primaryKey = '{{primaryKey}}';

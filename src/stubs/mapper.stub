@@ -1,0 +1,31 @@
+<?php
+
+namespace {{mapper_namespace}};
+
+use {{detail_dto_fqcn}};
+use {{list_dto_fqcn}};
+use {{mapper_contract_fqcn}};
+use {{model_fqcn}};
+use Illuminate\Database\Eloquent\Model;
+
+/**
+ * @implements ICrudMapper<{{model_short}}, {{list_dto_short}}, {{detail_dto_short}}>
+ */
+final class {{Class}}Mapper implements ICrudMapper
+{
+    public function toListItemDTO(Model $model): mixed
+    {
+        /** @var {{model_short}} $model */
+        return new {{list_dto_short}}(
+{{list_dto_named_args}}
+        );
+    }
+
+    public function toDetailDTO(Model $model): mixed
+    {
+        /** @var {{model_short}} $model */
+        return new {{detail_dto_short}}(
+{{detail_dto_named_args}}
+        );
+    }
+}

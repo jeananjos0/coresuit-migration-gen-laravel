@@ -2,30 +2,59 @@
 
 namespace App\Repositories\Contracts;
 
+use App\DTOs\Shared\IndexQueryDTO;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\LengthAwarePaginator;
-use App\DTOs\Shared\IndexQueryDTO;
 
 interface IBaseRepository
 {
     public function query(): Builder;
-    public function getAll(IndexQueryDTO $dto): LengthAwarePaginator;
-    public function findById(int|string $id, array $with = []): ?Model;
-    public function firstOrFailById(int|string $id, array $with = []): Model;
-    public function findManyByIds(array $ids, array $with = []): Collection;
-    public function exists(array $where): bool;
-    public function count(array $where = []): int;
-    public function create(array $data): Model;
-    public function update(int|string $id, array $data): Model;
-    public function upsert(array $rows, array $uniqueBy, array $updateColumns = []): void;
-    public function delete(int|string $id): bool;
-    public function forceDelete(int|string $id): bool;
-    public function restore(int|string $id): bool;
-    public function bulkDelete(array $ids): int;
-    public function bulkForceDelete(array $ids): int;
-    public function bulkRestore(array $ids): int;
+
     public function with(array $relations): Builder;
+
+    public function getAll(IndexQueryDTO $dto): LengthAwarePaginator;
+
+    public function findById(int|string $id, array $with = []): ?Model;
+
+    public function firstOrFailById(int|string $id, array $with = []): Model;
+
+    public function findManyByIds(array $ids, array $with = []): Collection;
+
+    /**
+     * Where seguro (valida colunas usando allowedFilters/Schema::hasColumn).
+     *
+     * Formatos aceitos:
+     *  - ['col' => 10]
+     *  - ['col' => ['op' => '>=', 'value' => 10]]
+     *  - ['col' => ['op' => 'like', 'value' => 'abc']]
+     *  - ['col' => ['op' => 'in', 'value' => [1,2,3]]]
+     *  - ['col' => ['op' => 'between', 'value' => [from, to]]]
+     *  - ['col' => ['op' => 'null']]
+     *  - ['col' => ['op' => 'notNull']]
+     */
+    public function exists(array $where): bool;
+
+    public function count(array $where = []): int;
+
+    public function create(array $data): Model;
+
+    public function update(int|string $id, array $data): Model;
+
+    public function upsert(array $rows, array $uniqueBy, array $updateColumns = []): void;
+
+    public function delete(int|string $id): bool;
+
+    public function forceDelete(int|string $id): bool;
+
+    public function restore(int|string $id): bool;
+
+    public function bulkDelete(array $ids): int;
+
+    public function bulkForceDelete(array $ids): int;
+
+    public function bulkRestore(array $ids): int;
+
     public function applyFilters(Builder $q, array $filters): Builder;
 }

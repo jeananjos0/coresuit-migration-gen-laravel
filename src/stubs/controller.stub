@@ -2,6 +2,8 @@
 
 namespace {{controller_namespace}};
 
+use {{create_dto_fqcn}};
+use {{update_dto_fqcn}};
 use {{base_controller_fqcn}} as BaseController;
 use {{index_request_fqcn}};
 use {{store_request_fqcn}};
@@ -10,12 +12,16 @@ use {{service_interface_fqcn}};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class {{Class}}Controller extends BaseController
+final class {{Class}}Controller extends BaseController
 {
     public function __construct({{service_interface_short}} $service)
     {
         parent::__construct($service);
     }
+
+    // =========================
+    // BaseController contracts
+    // =========================
 
     protected function defaultWith(): array
     {
@@ -37,12 +43,26 @@ class {{Class}}Controller extends BaseController
         return {{update_request_class}};
     }
 
+    protected function createDtoClass(): string
+    {
+        return {{Class}}CreateDTO::class;
+    }
+
+    protected function updateDtoClass(): string
+    {
+        return {{Class}}UpdateDTO::class;
+    }
+
+    // =========================
+    // Endpoints (OpenAPI)
+    // =========================
+
     /**
      * @OA\Get(
      *   path="/{{route_prefix}}",
      *   tags={"{{tag}}"},
      *   summary="Lista {{tag_lower_plural}}",
-     *   description="Lista paginada com filtros dinâmicos e carregamento condicional de relações.",
+     *   description="Lista paginada com filtros dinâmicos.",
      *   security={{"bearerAuth":{}}},
      *   parameters={
      *     @OA\Parameter(name="page", in="query", @OA\Schema(type="integer", minimum=1), description="Página atual"),
