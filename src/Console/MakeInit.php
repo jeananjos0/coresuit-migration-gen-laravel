@@ -20,6 +20,12 @@ class MakeInit extends Command
             return 1;
         }
 
+        // ✅ Variáveis que vão substituir placeholders dos stubs
+        // Ex.: namespace {{mapper_contracts_namespace}}; -> namespace App\Mappers\Contracts;
+        $vars = [
+            'mapper_contracts_namespace' => 'App\\Mappers\\Contracts',
+        ];
+
         // 1) Arquivos base (+ Providers + OpenAPI + config l5-swagger)
         $targets = [
             // Bases
@@ -34,8 +40,6 @@ class MakeInit extends Command
             'app/DTOs/Shared/PageDTO.php'                    => 'dto_page.stub',
             'app/Mappers/Contracts/ICrudMapper.php'          => 'mapper_contract.stub',
 
-
-
             // OpenAPI (@OA\OpenApi + Info/Security globais)
             'app/OpenApi/OpenApi.php'                        => 'openapi_boot.stub',
 
@@ -49,7 +53,20 @@ class MakeInit extends Command
 
         foreach ($targets as $dest => $stubName) {
             $stubPath = $this->resolveStubPath($fs, $stubName);
-            $this->publish($fs, base_path($dest), $fs->get($stubPath), (bool) $this->option('force'));
+
+            // ✅ Lê o stub
+            $raw = $fs->get($stubPath);
+
+            // ✅ Aplica substituição de placeholders ({{...}})
+            $rendered = $this->renderStub($raw, $vars);
+
+            // ✅ Publica o arquivo final já “renderizado”
+            $this->publish(
+                $fs,
+                base_path($dest),
+                $rendered,
+                (bool) $this->option('force')
+            );
         }
 
         // 2) Registrar providers (bootstrap/providers.php OU config/app.php)
@@ -61,7 +78,7 @@ class MakeInit extends Command
         // 3) Garantir diretórios e artefatos mínimos p/ Swagger
         $this->ensureDir($fs, base_path('app/Http/Controllers/System'));
         $this->ensureDir($fs, storage_path('api-docs'));
-        $this->ensureHealthController($fs);
+        $this->ensureHealthController($fs, $vars);
         $this->ensureHealthRoute($fs);
 
         // 4) Flag de init (permite travar o MakeEntity se não rodar init antes)
@@ -104,6 +121,19 @@ class MakeInit extends Command
         return __DIR__ . '/../stubs/' . $file;
     }
 
+    /**
+     * ✅ Substitui placeholders no formato {{key}} ou {{ key }}
+     */
+    private function renderStub(string $contents, array $vars): string
+    {
+        foreach ($vars as $key => $value) {
+            $contents = str_replace('{{' . $key . '}}', $value, $contents);
+            $contents = str_replace('{{ ' . $key . ' }}', $value, $contents);
+        }
+
+        return $contents;
+    }
+
     private function publish(Filesystem $fs, string $dest, string $contents, bool $force): void
     {
         $dir = dirname($dest);
@@ -136,18 +166,20 @@ class MakeInit extends Command
         $this->line('• Flag de init criado em: ' . str_replace(base_path() . DIRECTORY_SEPARATOR, '', $flagPath));
     }
 
-    // Cria um controller /health com anotação @OA\Get se estiver faltando
-    private function ensureHealthController(Filesystem $fs): void
+    // ✅ Agora recebe $vars para renderizar também o stub do HealthController (se existir)
+    private function ensureHealthController(Filesystem $fs, array $vars): void
     {
         $path = base_path('app/Http/Controllers/System/HealthController.php');
         if ($fs->exists($path)) {
             return;
         }
 
-        // tenta via stub; se não existir, usa fallback embutido
         $stubPath = $this->resolveStubPath($fs, 'health_controller.stub');
         if ($fs->exists($stubPath)) {
-            $this->publish($fs, $path, $fs->get($stubPath), (bool) $this->option('force'));
+            $raw = $fs->get($stubPath);
+            $rendered = $this->renderStub($raw, $vars);
+
+            $this->publish($fs, $path, $rendered, (bool) $this->option('force'));
             return;
         }
 
@@ -189,7 +221,6 @@ PHP;
         $this->publish($fs, $path, $fallback, (bool) $this->option('force'));
     }
 
-    // Injeta a rota /health no routes/api.php (idempotente)
     private function ensureHealthRoute(Filesystem $fs): void
     {
         $routesPath = base_path('routes/api.php');
@@ -200,12 +231,10 @@ PHP;
 
         $content = $fs->get($routesPath);
 
-        // Garante o use Route;
         if (!str_contains($content, 'use Illuminate\\Support\\Facades\\Route;')) {
             $content = preg_replace('/<\?php\s*/', "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n\n", $content, 1);
         }
 
-        // Garante a rota
         $line = "Route::get('health', \\App\\Http\\Controllers\\System\\HealthController::class);";
         if (!str_contains($content, $line)) {
             $content = rtrim($content) . "\n" . $line . "\n";
@@ -218,10 +247,8 @@ PHP;
 
     private function ensureProvidersRegistered(Filesystem $fs, array $providersFqcn): void
     {
-        // Laravel 11/12: bootstrap/providers.php (array retornado)
         $path = base_path('bootstrap/providers.php');
         if (!$fs->exists($path)) {
-            // fallback: config/app.php (bloco 'providers' => [ ... ])
             $path = base_path('config/app.php');
         }
 
@@ -249,7 +276,6 @@ PHP;
             $insertion .= "    {$fqcn}::class," . PHP_EOL;
         }
 
-        // Caso "return [ ... ];"
         if (preg_match('/return\s*\[\s*(.*)\s*\]\s*;\s*$/s', $contents)) {
             $contents = preg_replace('/\]\s*;\s*$/', $insertion . '];' . PHP_EOL, $contents, 1);
             $fs->put($path, $contents);
@@ -257,7 +283,6 @@ PHP;
             return;
         }
 
-        // Caso "providers" => [ ... ]
         if (preg_match('/([\'"]providers[\'"]\s*=>\s*\[)(.*?)(\])/s', $contents, $m, PREG_OFFSET_CAPTURE)) {
             $posClose = $m[3][1];
             $contents = substr_replace($contents, PHP_EOL . $insertion, $posClose, 0);
