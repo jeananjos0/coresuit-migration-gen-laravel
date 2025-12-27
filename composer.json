@@ -1,7 +1,6 @@
 {
     "name": "coresuit/migration-gen-laravel",
     "description": "Gerador de migrations por entidade e campos (CoreSuit style) para Laravel",
-    "version": "2.0.1",
     "type": "library",
     "license": "MIT",
     "autoload": {
