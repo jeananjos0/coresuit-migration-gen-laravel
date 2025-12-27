@@ -21,6 +21,16 @@ class MakeEntity extends Command
             {--name= : Nome da entidade (ex: Pedido ou TipoVariacao)}
             {--fields= : Campos ex: cliente_id:int:true,data_pedido:date:true,observacao:text:false}
 
+            {--no-dtos : Não gerar DTOs}
+            {--no-mapper : Não gerar Mapper}
+
+            {--stub-dto_create= : Caminho customizado do stub do DTO Create}
+            {--stub-dto_update= : Caminho customizado do stub do DTO Update}
+            {--stub-dto_list_item= : Caminho customizado do stub do DTO ListItem}
+            {--stub-dto_detail= : Caminho customizado do stub do DTO Detail}
+            {--stub-mapper= : Caminho customizado do stub do Mapper}
+
+
             {--stub-migration= : Caminho customizado do stub de migration}
             {--stub-model= : Caminho customizado do stub de model}
             {--stub-repository= : Caminho customizado do stub de repository}
